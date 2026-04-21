@@ -1,5 +1,5 @@
 # --- Build Stage ---
-FROM node:24.12.0-slim AS builder
+FROM node:24.14.1-slim AS builder
 WORKDIR /app
 
 ENV CI=true
@@ -46,7 +46,7 @@ RUN pnpm build
 RUN pnpm prune --production
 
 # --- Production Stage ---
-FROM node:24.12.0-slim
+FROM node:24.14.1-slim
 WORKDIR /app
 
 RUN apt-get update && \
