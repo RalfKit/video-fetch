@@ -6,6 +6,7 @@
 	import Retry from '$lib/assets/retry.svelte';
 	import Trash from '$lib/assets/trash.svelte';
 	import type { DownloadUpdate } from '$lib/types/download';
+	import { SvelteMap } from 'svelte/reactivity';
 	import type { PageProps } from './$types';
 	import { onMount } from 'svelte';
 	import { writable } from 'svelte/store';
@@ -40,7 +41,7 @@
 				const finished = updates.filter((d) => ['finished', 'error'].includes(d.status));
 
 				finishedDownloads.update((current) => {
-					const map = new Map(current.map((d) => [d.id, d]));
+					const map = new SvelteMap(current.map((d) => [d.id, d]));
 					for (const d of finished) map.set(d.id, d);
 					return Array.from(map.values());
 				});
