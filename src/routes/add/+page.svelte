@@ -3,7 +3,7 @@
 	import { writable } from 'svelte/store';
 	import type { PageProps } from './$types';
 
-	let { form }: PageProps = $props();
+	let { data, form }: PageProps = $props();
 
 	// Tab state
 	let active: 'single' | 'batch' = $state('single');
@@ -15,6 +15,9 @@
 
 	const preview = writable([] as { url: string; filename: string | null }[]);
 	let batchError: string | null = $state(null);
+	let refreshedFolders = $state<string[] | null>(null);
+	let folders = $derived(refreshedFolders ?? data.folders ?? []);
+	let showAdvanced = $state(false);
 
 	const MAX_FILENAME_LENGTH = 200;
 
@@ -123,6 +126,12 @@
 			parseTSV(text);
 		});
 	}
+
+	async function refreshFolders() {
+		const response = await fetch('/api/folders');
+		const payload = await response.json();
+		refreshedFolders = payload.folders ?? [];
+	}
 </script>
 
 <div class="w-full max-w-4xl px-4">
@@ -160,6 +169,30 @@
 					/>
 				</label>
 
+				<label class="flex flex-col">
+					<span class="font-medium">Download Profile</span>
+					<select name="profile_id" class="select-bordered select w-full">
+						{#each data.profiles as profile}
+							<option value={profile.id} selected={profile.isDefault}>{profile.name}</option>
+						{/each}
+					</select>
+				</label>
+
+				<div class="grid gap-2">
+					<label class="flex flex-col">
+						<span class="font-medium">Subfolder</span>
+						<select name="folder" class="select-bordered select w-full">
+							<option value="">No subfolder</option>
+							{#each folders as folder}
+								<option value={folder}>{folder}</option>
+							{/each}
+						</select>
+					</label>
+					<button type="button" class="btn btn-sm btn-outline" onclick={refreshFolders}>
+						Refresh folders
+					</button>
+				</div>
+
 				<!-- <label class="flex flex-col">
 					<span class="font-medium">Qualität</span>
 					<select name="quality" class="select-bordered select w-full">
@@ -185,6 +218,45 @@
 					<input name="append_title" type="checkbox" class="checkbox" />
 					<span>Append page title to filename</span>
 				</label>
+
+				<label class="flex items-center gap-3">
+					<input
+						name="advanced_enabled"
+						type="checkbox"
+						class="toggle"
+						bind:checked={showAdvanced}
+					/>
+					<span>Advanced mode</span>
+				</label>
+
+				{#if showAdvanced}
+					<div class="grid gap-4 rounded border border-base-300 p-4">
+						<label class="flex items-center gap-3">
+							<input name="embed_subtitles" type="checkbox" class="checkbox" />
+							<span>Embed subtitles when available</span>
+						</label>
+
+						<label class="flex flex-col">
+							<span class="font-medium">Retries</span>
+							<input name="retries" type="number" min="0" class="input-bordered input w-full" />
+						</label>
+
+						<label class="flex flex-col">
+							<span class="font-medium">Rate limit</span>
+							<input name="rate_limit" type="text" class="input-bordered input w-full" placeholder="2M" />
+						</label>
+
+						<label class="flex flex-col">
+							<span class="font-medium">Custom yt-dlp args</span>
+							<input
+								name="custom_args"
+								type="text"
+								class="input-bordered input w-full"
+								placeholder="--cookies /config/cookies.txt"
+							/>
+						</label>
+					</div>
+				{/if}
 
 				<button class="btn w-full btn-primary" type="submit">Add</button>
 			</div>
@@ -225,6 +297,30 @@
 						oninput={(e) => updateFromTextarea(e.currentTarget.value)}
 						onkeydown={handleTextareaKeydown}
 					></textarea>
+				</div>
+
+				<label class="flex flex-col">
+					<span class="font-medium">Download Profile</span>
+					<select name="profile_id" class="select-bordered select w-full">
+						{#each data.profiles as profile}
+							<option value={profile.id} selected={profile.isDefault}>{profile.name}</option>
+						{/each}
+					</select>
+				</label>
+
+				<div class="grid gap-2">
+					<label class="flex flex-col">
+						<span class="font-medium">Subfolder</span>
+						<select name="folder" class="select-bordered select w-full">
+							<option value="">No subfolder</option>
+							{#each folders as folder}
+								<option value={folder}>{folder}</option>
+							{/each}
+						</select>
+					</label>
+					<button type="button" class="btn btn-sm btn-outline" onclick={refreshFolders}>
+						Refresh folders
+					</button>
 				</div>
 
 				{#if batchError}
