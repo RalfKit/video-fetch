@@ -49,10 +49,12 @@ export function validateSubscriptionFilterRules(now = new Date()) {
 	const stats = emptyStats(entries.length);
 	const noInitial = selectInitialImportEntries(entries, 'new_only', null, stats).length === 0;
 	const lastTwoVideos =
-		selectInitialImportEntries(entries, 'last_videos', 2, emptyStats(entries.length)).map((entry) => entry.key)
+		selectInitialImportEntries(entries, 'last_videos', 2, emptyStats(entries.length))
+			.map((entry) => entry.key)
 			.join(',') === 'normal-new,short-new';
 	const lastThreeDays =
-		selectInitialImportEntries(entries, 'last_days', 3, emptyStats(entries.length)).map((entry) => entry.key)
+		selectInitialImportEntries(entries, 'last_days', 3, emptyStats(entries.length))
+			.map((entry) => entry.key)
 			.join(',') === 'normal-new,short-new';
 	const noShorts =
 		filterContent(
@@ -65,7 +67,9 @@ export function validateSubscriptionFilterRules(now = new Date()) {
 				excludeKeywords: null
 			},
 			emptyStats(entries.length)
-		).map((entry) => entry.key).join(',') === 'normal-new,normal-old';
+		)
+			.map((entry) => entry.key)
+			.join(',') === 'normal-new,normal-old';
 	const combined =
 		selectInitialImportEntries(
 			filterContent(
@@ -82,7 +86,9 @@ export function validateSubscriptionFilterRules(now = new Date()) {
 			'last_days',
 			3,
 			emptyStats(entries.length)
-		).map((entry) => entry.key).join(',') === 'normal-new';
+		)
+			.map((entry) => entry.key)
+			.join(',') === 'normal-new';
 
 	return { noInitial, lastTwoVideos, lastThreeDays, noShorts, combined };
 }
@@ -154,8 +160,11 @@ export async function addSubscription(input: {
 export async function deleteSubscription(id: string) {
 	deletedSubscriptions.add(id);
 
-	await db.transaction((tx) => {
-		tx.update(downloads).set({ subscriptionId: null }).where(eq(downloads.subscriptionId, id)).run();
+	db.transaction((tx) => {
+		tx.update(downloads)
+			.set({ subscriptionId: null })
+			.where(eq(downloads.subscriptionId, id))
+			.run();
 		tx.delete(subscriptions).where(eq(subscriptions.id, id)).run();
 	});
 
@@ -226,13 +235,15 @@ async function checkSubscription(subscription: Subscription) {
 			stage: 'poll'
 		});
 
-		if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id))) return;
+		if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id)))
+			return;
 
 		await enqueueEntries(subscription, newEntries);
 		await markSubscriptionChecked(subscription, entries, null);
 		void processDownloads();
 	} catch (err) {
-		if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id))) return;
+		if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id)))
+			return;
 		await db
 			.update(subscriptions)
 			.set({
@@ -246,15 +257,57 @@ async function checkSubscription(subscription: Subscription) {
 	}
 }
 
-async function fetchSubscriptionEntries(url: string) {
+async function fetchSubscriptionEntries(inputUrl: string) {
 	const { ytdlp } = await import('./ytdlp');
-	const info = (await ytdlp.getInfoAsync(url)) as PlaylistInfo | VideoInfo;
-	const rawEntries =
-		info._type === 'playlist' && Array.isArray(info.entries) ? info.entries : [info as VideoInfo];
+
+	const url = normalizeSubscriptionUrl(inputUrl);
+	const info = await ytdlp.getInfoAsync(url);
+
+	const rawEntries: Record<string, unknown>[] = [];
+
+	if (isPlaylistInfo(info) && Array.isArray(info.entries)) {
+		for (const entry of info.entries) {
+			if (!entry || typeof entry !== 'object') continue;
+
+			const item = entry as unknown as Record<string, unknown>;
+
+			// Skip container/tab entries like "Videos", "Shorts", etc.
+			if (Array.isArray(item.entries)) continue;
+
+			const normalized = normalizeEntry(item);
+			if (normalized) rawEntries.push(normalized.raw);
+		}
+	} else if (info && typeof info === 'object') {
+		rawEntries.push(info as unknown as Record<string, unknown>);
+	}
 
 	return rawEntries
-		.map((entry) => normalizeEntry(entry as unknown as Record<string, unknown>))
+		.map((entry) => normalizeEntry(entry))
 		.filter((entry): entry is SubscriptionEntry => entry !== null);
+}
+
+function normalizeSubscriptionUrl(url: string) {
+	if (
+		url.includes('youtube.com/@') ||
+		url.includes('youtube.com/channel/') ||
+		url.includes('youtube.com/c/') ||
+		url.includes('youtube.com/user/')
+	) {
+		if (!/\/(videos|shorts|streams)\/?(\?|$)/i.test(url)) {
+			return url.replace(/\/?$/, '/videos');
+		}
+	}
+
+	return url;
+}
+
+function isPlaylistInfo(info: PlaylistInfo | VideoInfo): info is PlaylistInfo {
+	return (
+		typeof info === 'object' &&
+		info !== null &&
+		'_type' in info &&
+		(info as { _type?: string })._type === 'playlist'
+	);
 }
 
 function normalizeEntry(entry: Record<string, unknown>): SubscriptionEntry | null {
@@ -467,7 +520,16 @@ function filterContent(
 
 async function enqueueEntries(subscription: Subscription, entries: SubscriptionEntry[]) {
 	if (entries.length === 0) return;
-	if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id))) return;
+	if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id)))
+		return;
+
+	console.log(
+		entries.map((e) => ({
+			title: e.title,
+			url: e.url,
+			isShort: e.isShort
+		}))
+	);
 
 	const rawItems = entries.map((entry) => ({
 		videoUrl: entry.url,
@@ -478,7 +540,8 @@ async function enqueueEntries(subscription: Subscription, entries: SubscriptionE
 	}));
 
 	const queueItems = await prepareDownloadItems(rawItems, 'subscription');
-	if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id))) return;
+	if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id)))
+		return;
 	await addDownloads(queueItems);
 	void processDownloads();
 }
@@ -488,7 +551,8 @@ async function markSubscriptionChecked(
 	entries: SubscriptionEntry[],
 	errorMessage: string | null
 ) {
-	if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id))) return;
+	if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id)))
+		return;
 
 	await db
 		.update(subscriptions)
@@ -521,22 +585,28 @@ function parseCheckpoint(input?: string | null): SubscriptionCheckpoint {
 		return { seenKeys: [], updatedAt: new Date(0).toISOString() };
 	}
 }
-
 function entryUrl(entry: Record<string, unknown>) {
-	const webpageUrl = stringOrNull(entry.webpage_url);
-	const url = stringOrNull(entry.url);
 	const id = stringOrNull(entry.id);
-	if (webpageUrl) return webpageUrl;
-	if (url?.startsWith('http')) return url;
-	if (id && stringOrNull(entry.extractor)?.toLowerCase().includes('youtube')) {
+
+	const webpageUrl =
+		stringOrNull(entry.webpage_url) ?? stringOrNull(entry.original_url) ?? stringOrNull(entry.url);
+
+	if (webpageUrl?.startsWith('http')) {
+		return webpageUrl;
+	}
+
+	if (id) {
 		return `https://www.youtube.com/watch?v=${id}`;
 	}
-	return url || id;
+
+	return null;
 }
 
 function entryDate(entry: Record<string, unknown>) {
 	const timestamp =
-		numberOrNull(entry.timestamp) ?? numberOrNull(entry.release_timestamp) ?? numberOrNull(entry.epoch);
+		numberOrNull(entry.timestamp) ??
+		numberOrNull(entry.release_timestamp) ??
+		numberOrNull(entry.epoch);
 	if (timestamp) return new Date(timestamp * 1000);
 
 	const uploadDate =
@@ -577,9 +647,7 @@ function detectShort(entry: Record<string, unknown>) {
 		.join(' ')
 		.toLowerCase();
 	const duration = numberOrNull(entry.duration);
-	const tags = Array.isArray(entry.tags)
-		? entry.tags.map((tag) => String(tag).toLowerCase())
-		: [];
+	const tags = Array.isArray(entry.tags) ? entry.tags.map((tag) => String(tag).toLowerCase()) : [];
 
 	if (url.includes('/shorts/')) return true;
 	if (typeHints.includes('shorts')) return true;
@@ -587,7 +655,9 @@ function detectShort(entry: Record<string, unknown>) {
 	if (title.includes('#shorts') || title.includes('#short')) return true;
 
 	// Duration alone is not enough: channels often publish normal clips under a minute.
-	return duration !== null && duration <= 60 && (typeHints.includes('short') || url.includes('short'));
+	return (
+		duration !== null && duration <= 60 && (typeHints.includes('short') || url.includes('short'))
+	);
 }
 
 function parseKeywords(input?: string | null) {
