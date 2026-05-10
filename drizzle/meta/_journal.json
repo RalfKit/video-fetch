@@ -15,6 +15,13 @@
       "when": 1778409600000,
       "tag": "0001_queue_architecture",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1778413200000,
+      "tag": "0002_subscription_onboarding",
+      "breakpoints": true
     }
   ]
 }
