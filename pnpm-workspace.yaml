@@ -1,3 +1,4 @@
 onlyBuiltDependencies:
-  - esbuild
   - better-sqlite3
+  - esbuild
+  - ytdlp-nodejs
