@@ -18,6 +18,9 @@ It is designed as a lightweight alternative to manual video downloading workflow
 - Real-time download status updates (SSE)
 - Queue-based download handling with concurrency control
 - Separate views for active and completed downloads
+- Async metadata fetching so add requests return immediately
+- Optional safe subfolders under `DOWNLOAD_PATH`
+- Download profiles, subscriptions, and searchable archive playback
 
 ## ⚙️ Configuration
 
@@ -30,6 +33,14 @@ Recommended: mount as persistent Docker volume.
 ```yaml
 volumes:
   - ./downloads:/downloads
+```
+
+### `TEMP_DOWNLOAD_PATH`
+
+Directory used for incomplete yt-dlp output and temporary fragments. Completed files are moved into `DOWNLOAD_PATH` only after yt-dlp exits successfully.
+
+```env
+TEMP_DOWNLOAD_PATH=/downloads/.incomplete
 ```
 
 ### `DATABASE_PATH`
@@ -61,6 +72,14 @@ Maximum allowed concurrent downloads in UI.
 PUBLIC_MAX_CONCURRENCY=5
 ```
 
+### `CONCURRENCY_WINDOWS`
+
+Optional comma-separated time windows that override download concurrency by local server time.
+
+```env
+CONCURRENCY_WINDOWS="01:00-05:00=5,05:00-01:00=1"
+```
+
 ## 🚀 Usage
 
 1. Start the container (Docker or Docker Compose)
@@ -85,7 +104,7 @@ eventSource.onmessage = (event) => {
 
 ### POST `/api/add`
 
-Adds one or multiple video download jobs.
+Adds one or multiple video download jobs. The endpoint validates basic payload shape, stores queue items, and returns before metadata extraction starts.
 
 **Payload:**
 
@@ -95,10 +114,15 @@ Adds one or multiple video download jobs.
     "videoUrl": "https://example.com/video.mp4",
     "fileName": "Video1",
     "appendTitle": false,
-    "quality": "highest"
+    "profileId": "best",
+    "folder": "Creator Name"
   }
 ]
 ```
+
+### GET `/api/folders`
+
+Lists existing subfolders under `DOWNLOAD_PATH` for safe folder selection.
 
 ## 🐳 Docker
 
