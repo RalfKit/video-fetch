@@ -8,6 +8,7 @@
 - `folders.ts`: safe relative folder listing and validation under `DOWNLOAD_PATH`.
 - `profiles.ts`: user-friendly download profiles mapped to yt-dlp options.
 - `subscriptions.ts`: subscription persistence, polling, and queue enqueueing.
+- Subscription onboarding fetches flat metadata, stores a checkpoint, and only enqueues the requested import slice. The default mode records existing entries without queueing them.
 - `scheduler.ts`: configurable concurrency windows via `CONCURRENCY_WINDOWS`.
 
 ## Schema Direction
@@ -24,6 +25,7 @@ Future migrations worth considering:
 - Move extractor identity into a dedicated `media_items` table if history becomes large.
 - Add a real `queue_events` table for audit/debug logs.
 - Add `subscription_items` to track every seen video without relying only on downloads.
+- Promote subscription checkpoints into a normalized table if channels with more than the current checkpoint window need exact long-term seen-state.
 
 ## Technical Debt
 
