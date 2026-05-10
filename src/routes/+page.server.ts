@@ -92,7 +92,7 @@ export const actions = {
 			return fail(400, { error: 'Invalid ID' });
 		}
 
-		setStatus(id, 'pending', null);
+		await setStatus(id, 'pending', null);
 
 		void processDownloads();
 
