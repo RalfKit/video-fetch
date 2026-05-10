@@ -152,13 +152,19 @@
 							</div>
 
 							<div class="flex gap-1">
-								<button class="btn btn-ghost btn-xs" title="Copy link" onclick={() => copyUrl(d.videoUrl)}>
+								<button
+									class="btn btn-ghost btn-xs"
+									title="Copy link"
+									onclick={() => copyUrl(d.videoUrl)}
+								>
 									<Copy class="size-4" />
 								</button>
 
-								<form action="?/cancelDownload" method="post" class="btn text-error btn-ghost btn-xs" use:enhance>
+								<form action="?/cancelDownload" method="post" use:enhance>
 									<input type="hidden" name="id" value={d.id} />
-									<button><Cancel class="size-4" /></button>
+									<button class="btn text-error btn-ghost btn-xs">
+										<Cancel class="size-4" />
+									</button>
 								</form>
 							</div>
 						</div>
@@ -195,7 +201,9 @@
 		{#if visibleFinished($finishedDownloads).length}
 			<div class="grid gap-3">
 				{#each visibleFinished($finishedDownloads) as d (d.id)}
-					<div class={`rounded-lg border p-3 ${d.status === 'failed' ? 'bg-error/10' : 'bg-base-200'}`}>
+					<div
+						class={`rounded-lg border p-3 ${d.status === 'failed' ? 'bg-error/10' : 'bg-base-200'}`}
+					>
 						<div class="grid gap-3 md:grid-cols-[120px_1fr_auto]">
 							<div class="aspect-video overflow-hidden rounded bg-base-300">
 								{#if d.thumbnailUrl}
@@ -206,14 +214,19 @@
 							<div class="min-w-0 space-y-1">
 								<p class="truncate font-medium">{d.fileName ?? d.title ?? 'Unnamed'}</p>
 								<p class="text-xs text-gray-500">{d.title ?? d.videoUrl}</p>
-								<p class={d.status === 'failed' ? 'text-error text-sm' : 'text-success text-sm'}>
+								<p class={d.status === 'failed' ? 'text-sm text-error' : 'text-sm text-success'}>
 									{statusLabel(d.status)}
 									{#if d.errorMessage}
 										<span class="text-gray-500">- {d.errorMessage}</span>
 									{/if}
 								</p>
 								{#if canPlay(d)}
-									<video class="mt-2 max-h-72 w-full rounded bg-black" controls preload="metadata" src={`/api/media/${d.id}`}>
+									<video
+										class="mt-2 max-h-72 w-full rounded bg-black"
+										controls
+										preload="metadata"
+										src={`/api/media/${d.id}`}
+									>
 										<track kind="captions" />
 									</video>
 								{/if}
@@ -221,17 +234,29 @@
 
 							<div class="flex justify-end gap-1">
 								{#if d.status === 'failed'}
-									<form action="?/retryDownload" method="post" use:enhance={() => removeFromFinished(d.id)}>
+									<form
+										action="?/retryDownload"
+										method="post"
+										use:enhance={() => removeFromFinished(d.id)}
+									>
 										<input type="hidden" name="id" value={d.id} />
 										<button class="btn btn-ghost btn-xs"><Retry class="size-4" /></button>
 									</form>
 								{/if}
 
-								<button class="btn btn-ghost btn-xs" title="Copy link" onclick={() => copyUrl(d.videoUrl)}>
+								<button
+									class="btn btn-ghost btn-xs"
+									title="Copy link"
+									onclick={() => copyUrl(d.videoUrl)}
+								>
 									<Copy class="size-4" />
 								</button>
 
-								<form action="?/deleteDownload" method="post" use:enhance={() => removeFromAll(d.id)}>
+								<form
+									action="?/deleteDownload"
+									method="post"
+									use:enhance={() => removeFromAll(d.id)}
+								>
 									<input type="hidden" name="id" value={d.id} />
 									<button class="btn text-error btn-ghost btn-xs">
 										<Trash class="size-4" />
