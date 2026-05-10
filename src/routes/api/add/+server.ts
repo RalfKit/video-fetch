@@ -7,12 +7,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const data = await request.json();
 
-		// data kann ein Objekt oder Array sein
-		const items = await prepareDownloadItems(data);
-		await addDownloads(items);
+		const items = await prepareDownloadItems(data, 'api');
+		const inserted = await addDownloads(items);
 		void processDownloads();
 
-		return new Response(JSON.stringify({ message: 'Downloads added to queue' }), { status: 201 });
+		return new Response(
+			JSON.stringify({ message: 'Downloads added to queue', queued: inserted.length }),
+			{ status: 202 }
+		);
 	} catch (err) {
 		if (err instanceof ValidationError) {
 			return new Response(JSON.stringify({ error: err.message }), { status: err.status });
