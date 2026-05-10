@@ -21,6 +21,7 @@ It is designed as a lightweight alternative to manual video downloading workflow
 - Async metadata fetching so add requests return immediately
 - Optional safe subfolders under `DOWNLOAD_PATH`
 - Download profiles, subscriptions, and searchable archive playback
+- Subscription onboarding modes that default to future uploads only
 
 ## ⚙️ Configuration
 
@@ -79,6 +80,18 @@ Optional comma-separated time windows that override download concurrency by loca
 ```env
 CONCURRENCY_WINDOWS="01:00-05:00=5,05:00-01:00=1"
 ```
+
+## Subscriptions
+
+New subscriptions default to **Only new uploads**. On creation, Video Fetcher fetches feed metadata, stores a checkpoint, and avoids queueing the creator's historical archive.
+
+Optional initial import modes are available:
+
+- Last X days
+- Last X videos
+- Full archive import
+
+Subscriptions can also filter before enqueueing by excluding Shorts, duration limits, and simple include/exclude keyword lists.
 
 ## 🚀 Usage
 
