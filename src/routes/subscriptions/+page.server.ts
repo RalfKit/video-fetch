@@ -3,7 +3,9 @@ import type { Actions, PageServerLoad } from './$types';
 import {
 	addSubscription,
 	checkSubscriptionNow,
+	deleteSubscription,
 	listSubscriptions,
+	type SubscriptionImportMode,
 	updateSubscriptionEnabled
 } from '$lib/server/subscriptions';
 import { listDownloadFolders } from '$lib/server/folders';
@@ -23,11 +25,31 @@ export const actions: Actions = {
 		const startTime = formData.get('start_time')?.toString() || null;
 		const folder = formData.get('folder')?.toString() || null;
 		const profileId = formData.get('profile_id')?.toString() || 'best';
+		const importMode = normalizeImportMode(formData.get('import_mode')?.toString());
+		const importLimit = Number(formData.get('import_limit') || 0) || null;
+		const excludeShorts = formData.get('exclude_shorts') === 'on';
+		const minDuration = minutesToSeconds(formData.get('min_duration')?.toString());
+		const maxDuration = minutesToSeconds(formData.get('max_duration')?.toString());
+		const includeKeywords = formData.get('include_keywords')?.toString() || null;
+		const excludeKeywords = formData.get('exclude_keywords')?.toString() || null;
 
 		if (!url) return fail(400, { error: 'URL is required' });
 
 		try {
-			await addSubscription({ url, intervalMinutes, startTime, folder, profileId });
+			await addSubscription({
+				url,
+				intervalMinutes,
+				startTime,
+				folder,
+				profileId,
+				importMode,
+				importLimit,
+				excludeShorts,
+				minDuration,
+				maxDuration,
+				includeKeywords,
+				excludeKeywords
+			});
 		} catch (err) {
 			return fail(400, { error: (err as Error).message });
 		}
@@ -46,5 +68,23 @@ export const actions: Actions = {
 		const id = formData.get('id')?.toString() || '';
 		await checkSubscriptionNow(id);
 		return { success: true };
+	},
+	delete: async ({ request }) => {
+		const formData = await request.formData();
+		const id = formData.get('id')?.toString() || '';
+		if (!id) return fail(400, { error: 'Subscription ID is required' });
+		await deleteSubscription(id);
+		return { success: true, deletedId: id };
 	}
 };
+
+function normalizeImportMode(value?: string | null): SubscriptionImportMode {
+	if (value === 'last_days' || value === 'last_videos' || value === 'full_archive') return value;
+	return 'new_only';
+}
+
+function minutesToSeconds(value?: string | null) {
+	const minutes = Number(value);
+	if (!Number.isFinite(minutes) || minutes <= 0) return null;
+	return Math.floor(minutes * 60);
+}
