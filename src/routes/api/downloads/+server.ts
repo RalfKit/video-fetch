@@ -21,8 +21,8 @@ export const GET: RequestHandler = ({ request }) => {
 						(d) =>
 							d.status === 'downloading' ||
 							d.status === 'pending' ||
+							d.status === 'metadata_fetching' ||
 							d.status === 'queued' ||
-							d.status === 'paused' ||
 							(d.finishedAt && now - d.finishedAt.getTime() < TWO_SECONDS)
 					)
 					.map((d) => ({
@@ -31,7 +31,13 @@ export const GET: RequestHandler = ({ request }) => {
 						fileName: d.fileName,
 						status: d.status,
 						errorMessage: d.errorMessage,
-						progress: d.progress
+						progress: d.progress,
+						title: d.title,
+						thumbnailUrl: d.thumbnailUrl,
+						filePath: d.filePath,
+						folder: d.folder,
+						createdAt: d.createdAt,
+						finishedAt: d.finishedAt
 					}));
 
 				if (activeDownloads.length === 0) return; // nichts senden, kein Download aktiv
