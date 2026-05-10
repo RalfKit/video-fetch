@@ -82,6 +82,7 @@ ENV NODE_ENV=production
 ENV PUBLIC_DEFAULT_CONCURRENCY=1
 ENV PUBLIC_MAX_CONCURRENCY=5
 ENV DOWNLOAD_PATH=/downloads
+ENV TEMP_DOWNLOAD_PATH=/downloads/.incomplete
 ENV DATABASE_PATH=/data/downloads.db
 ENV PATH="$PATH:/root/.deno/bin" 
 
