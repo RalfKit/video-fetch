@@ -4,22 +4,19 @@ import { error, type RequestHandler } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db/index';
 import { downloads } from '$lib/server/db/schema';
-import { DOWNLOAD_FOLDER } from '$lib/server/config';
+import { resolveWithinDownloadFolder } from '$lib/server/folders';
 
 export const GET: RequestHandler = async ({ params }) => {
 	if (!params.id) throw error(404, 'Media not found');
 
-	const [download] = await db
-		.select()
-		.from(downloads)
-		.where(eq(downloads.id, params.id))
-		.limit(1);
+	const [download] = await db.select().from(downloads).where(eq(downloads.id, params.id)).limit(1);
 
 	if (!download?.filePath) throw error(404, 'Media not found');
 
-	const absolutePath = path.resolve(DOWNLOAD_FOLDER, download.filePath);
-	const root = path.resolve(DOWNLOAD_FOLDER);
-	if (absolutePath !== root && !absolutePath.startsWith(root + path.sep)) {
+	let absolutePath: string;
+	try {
+		absolutePath = resolveWithinDownloadFolder(download.filePath);
+	} catch {
 		throw error(403, 'Invalid media path');
 	}
 	if (!fs.existsSync(absolutePath)) throw error(404, 'Media not found');

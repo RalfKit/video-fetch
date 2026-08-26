@@ -1,8 +1,35 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { DOWNLOAD_FOLDER } from './config';
+import { resolveWithinRoot } from './utils';
 
 const MAX_DEPTH = 4;
+
+/**
+ * Resolves a stored relative media path to an absolute path that is guaranteed
+ * to live inside `DOWNLOAD_FOLDER`. Throws if the path would escape the folder.
+ */
+export function resolveWithinDownloadFolder(relativePath: string): string {
+	return resolveWithinRoot(DOWNLOAD_FOLDER, relativePath);
+}
+
+/**
+ * Deletes a downloaded file identified by its stored relative path.
+ *
+ * Path traversal / absolute paths are rejected so only files inside
+ * `DOWNLOAD_FOLDER` can ever be removed. Refuses to operate on the download
+ * root itself. Missing files are ignored.
+ */
+export async function deleteDownloadFile(relativePath: string): Promise<void> {
+	const trimmed = (relativePath ?? '').trim();
+	if (!trimmed) return;
+
+	const absolute = resolveWithinDownloadFolder(trimmed);
+	const root = path.resolve(DOWNLOAD_FOLDER);
+	if (absolute === root) throw new Error('Refusing to delete the download root directory');
+
+	await fs.rm(absolute, { force: true });
+}
 
 export function sanitizeFolder(input?: string | null): string | null {
 	if (!input) return null;
