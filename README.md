@@ -195,6 +195,28 @@ services:
 - Stability depends on external tools such as yt-dlp
 - Intended for personal or controlled environments
 
+## 🛠️ Development
+
+```bash
+pnpm install      # install dependencies
+pnpm dev          # start the dev server
+pnpm lint         # prettier --check + eslint
+pnpm check        # svelte-check / type check
+pnpm test         # vitest unit tests
+pnpm build        # production build (adapter-node)
+```
+
+## 🔁 CI/CD
+
+- **CI** (`.github/workflows/ci.yml`) runs on every pull request and on pushes to `main`: format/lint, type check, unit tests, plus a Docker image build with a startup/health smoke test.
+- **Dependency updates** are handled by Dependabot (`.github/dependabot.yml`) on a monthly schedule. Application dependencies are opened as individual PRs so a single failing update never blocks the others; security updates are opened independently and can be released early. Non-major update PRs are auto-merged once CI passes (`.github/workflows/dependabot-auto-merge.yml`).
+- **Releases** (`.github/workflows/release.yml`) are **not** cut on every merge. They run on a monthly schedule (and can be triggered manually via _workflow_dispatch_ for early/security releases), so several successful changes are collected into one release. [semantic-release](https://semantic-release.gitbook.io/) derives the version from [Conventional Commits](https://www.conventionalcommits.org/), updates `CHANGELOG.md` and `package.json`, creates the Git tag + GitHub release, and builds and pushes the versioned Docker image.
+
+### Required repository configuration
+
+- Secrets: `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Docker Hub publish).
+- Enable **Allow auto-merge** in the repository settings and protect `main` with the **CI** checks required, so `main` is only updated through green CI and Dependabot auto-merge works as intended.
+
 ## 📦 Stack
 
 - SvelteKit
