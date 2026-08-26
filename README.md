@@ -81,6 +81,30 @@ Optional comma-separated time windows that override download concurrency by loca
 CONCURRENCY_WINDOWS="01:00-05:00=5,05:00-01:00=1"
 ```
 
+### `DELETE_FILE_ON_DELETE`
+
+Controls what happens to the downloaded file when a completed download entry is deleted.
+
+- Default: `false` — only the database entry is removed; the file is kept.
+- When `true`, the associated file is also deleted.
+
+Deletion is strictly confined to `DOWNLOAD_PATH`: path traversal (`..`) and absolute paths are rejected, so no file outside `DOWNLOAD_PATH` can be removed.
+
+```env
+DELETE_FILE_ON_DELETE=true
+```
+
+### `YTDLP_PATH` / `FFMPEG_PATH`
+
+Optional explicit paths to the `yt-dlp` and `ffmpeg` binaries.
+
+When unset, the app uses `/usr/local/bin` (production image) or `/usr/bin` if present, and otherwise falls back to the `yt-dlp` binary bundled with `ytdlp-nodejs` and `ffmpeg` from `PATH`. This works across local development, Docker, and Linux/macOS/Windows without per-machine tweaks.
+
+```env
+YTDLP_PATH="/usr/local/bin/yt-dlp"
+FFMPEG_PATH="/usr/local/bin/ffmpeg"
+```
+
 ## Subscriptions
 
 New subscriptions default to **Only new uploads**. On creation, Video Fetcher fetches feed metadata, stores a checkpoint, and avoids queueing the creator's historical archive.
@@ -111,7 +135,7 @@ Server-Sent Events (SSE) stream for live download updates.
 const eventSource = new EventSource('/api/downloads');
 
 eventSource.onmessage = (event) => {
-  console.log(JSON.parse(event.data));
+	console.log(JSON.parse(event.data));
 };
 ```
 
@@ -123,13 +147,13 @@ Adds one or multiple video download jobs. The endpoint validates basic payload s
 
 ```json
 [
-  {
-    "videoUrl": "https://example.com/video.mp4",
-    "fileName": "Video1",
-    "appendTitle": false,
-    "profileId": "best",
-    "folder": "Creator Name"
-  }
+	{
+		"videoUrl": "https://example.com/video.mp4",
+		"fileName": "Video1",
+		"appendTitle": false,
+		"profileId": "best",
+		"folder": "Creator Name"
+	}
 ]
 ```
 
@@ -159,7 +183,7 @@ services:
     container_name: videofetch
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - '3000:3000'
     volumes:
       - ./downloads:/downloads
       - ./data/downloads.db:/data/downloads.db
