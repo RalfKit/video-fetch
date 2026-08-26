@@ -26,7 +26,7 @@ jobs:
             --label org.opencontainers.image.title="Video Fetcher" \
             --label org.opencontainers.image.description="A simple video download service with a SvelteKit frontend." \
             --label org.opencontainers.image.licenses="GNU Affero General Public License v3.0" \
-            --label org.opencontainers.image.source="https://github.com/BlackTiger007/video-fetch" \
+            --label org.opencontainers.image.source="https://github.com/RalfKit/video-fetch" \
             -t ${{ secrets.DOCKERHUB_USERNAME }}/videofetch:latest .
 
       # 4. Docker Image pushen
