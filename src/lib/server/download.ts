@@ -144,9 +144,7 @@ async function moveCompletedFile(outputBase: string, targetFolder: string) {
 		.map((entry) => entry.name)
 		.filter(
 			(name) =>
-				name.startsWith(`${outputBase}.`) &&
-				!name.endsWith('.part') &&
-				!name.endsWith('.ytdl')
+				name.startsWith(`${outputBase}.`) && !name.endsWith('.part') && !name.endsWith('.ytdl')
 		)
 		.sort((a, b) => b.length - a.length);
 

@@ -168,7 +168,8 @@ function queueDownload(item: Download) {
 }
 
 function entryToDownload(parent: Download, entry: Record<string, unknown>): DownloadAdd | null {
-	const entryUrl = stringOrNull(entry.webpage_url) || stringOrNull(entry.url) || stringOrNull(entry.id);
+	const entryUrl =
+		stringOrNull(entry.webpage_url) || stringOrNull(entry.url) || stringOrNull(entry.id);
 	if (!entryUrl) return null;
 
 	const title = stringOrNull(entry.title);

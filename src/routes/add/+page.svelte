@@ -10,7 +10,6 @@
 
 	// Batch textarea/file preview
 	let importText = $state('');
-	let importFile: File | null = $state(null);
 	let fileInput: HTMLInputElement | null = $state(null);
 
 	const preview = writable([] as { url: string; filename: string | null }[]);
@@ -76,7 +75,6 @@
 
 		// Clear file input when user edits manually
 		if (fileInput) fileInput.value = '';
-		importFile = null;
 
 		if (validateTSV(importText)) {
 			parseTSV(importText);
@@ -113,12 +111,9 @@
 		const f = input.files?.[0];
 
 		if (!f) {
-			importFile = null;
 			preview.set([]);
 			return;
 		}
-
-		importFile = f;
 
 		f.text().then((text) => {
 			importText = text;
@@ -172,7 +167,7 @@
 				<label class="flex flex-col">
 					<span class="font-medium">Download Profile</span>
 					<select name="profile_id" class="select-bordered select w-full">
-						{#each data.profiles as profile}
+						{#each data.profiles as profile (profile.id)}
 							<option value={profile.id} selected={profile.isDefault}>{profile.name}</option>
 						{/each}
 					</select>
@@ -183,12 +178,12 @@
 						<span class="font-medium">Subfolder</span>
 						<select name="folder" class="select-bordered select w-full">
 							<option value="">No subfolder</option>
-							{#each folders as folder}
+							{#each folders as folder (folder)}
 								<option value={folder}>{folder}</option>
 							{/each}
 						</select>
 					</label>
-					<button type="button" class="btn btn-sm btn-outline" onclick={refreshFolders}>
+					<button type="button" class="btn btn-outline btn-sm" onclick={refreshFolders}>
 						Refresh folders
 					</button>
 				</div>
@@ -243,7 +238,12 @@
 
 						<label class="flex flex-col">
 							<span class="font-medium">Rate limit</span>
-							<input name="rate_limit" type="text" class="input-bordered input w-full" placeholder="2M" />
+							<input
+								name="rate_limit"
+								type="text"
+								class="input-bordered input w-full"
+								placeholder="2M"
+							/>
 						</label>
 
 						<label class="flex flex-col">
@@ -302,7 +302,7 @@
 				<label class="flex flex-col">
 					<span class="font-medium">Download Profile</span>
 					<select name="profile_id" class="select-bordered select w-full">
-						{#each data.profiles as profile}
+						{#each data.profiles as profile (profile.id)}
 							<option value={profile.id} selected={profile.isDefault}>{profile.name}</option>
 						{/each}
 					</select>
@@ -313,12 +313,12 @@
 						<span class="font-medium">Subfolder</span>
 						<select name="folder" class="select-bordered select w-full">
 							<option value="">No subfolder</option>
-							{#each folders as folder}
+							{#each folders as folder (folder)}
 								<option value={folder}>{folder}</option>
 							{/each}
 						</select>
 					</label>
-					<button type="button" class="btn btn-sm btn-outline" onclick={refreshFolders}>
+					<button type="button" class="btn btn-outline btn-sm" onclick={refreshFolders}>
 						Refresh folders
 					</button>
 				</div>
@@ -344,7 +344,7 @@
 									</tr>
 								</thead>
 								<tbody>
-									{#each $preview as row, i}
+									{#each $preview as row, i (i)}
 										<tr>
 											<th>{i + 1}</th>
 											<td class="max-w-xs truncate">{row.url}</td>
