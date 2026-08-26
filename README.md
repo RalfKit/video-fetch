@@ -216,6 +216,7 @@ pnpm build        # production build (adapter-node)
 
 - Secrets: `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Docker Hub publish).
 - Enable **Allow auto-merge** in the repository settings and protect `main` with the **CI** checks required, so `main` is only updated through green CI and Dependabot auto-merge works as intended.
+- The release job pushes a version commit and tag to `main`. If `main` is protected, allow the Actions bot to bypass the protection (or provide a `GH_TOKEN` PAT with push access) so `semantic-release` can publish.
 
 ## 📦 Stack
 
