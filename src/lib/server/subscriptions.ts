@@ -197,8 +197,17 @@ export function startSubscriptionScheduler() {
 	schedulerState.timer = setInterval(() => {
 		void checkDueSubscriptions();
 	}, 60_000);
+	schedulerState.timer.unref?.();
 
 	void checkDueSubscriptions();
+}
+
+export function stopSubscriptionScheduler() {
+	if (schedulerState.timer) {
+		clearInterval(schedulerState.timer);
+		schedulerState.timer = null;
+	}
+	schedulerState.started = false;
 }
 
 async function checkDueSubscriptions() {
