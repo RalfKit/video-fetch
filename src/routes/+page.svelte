@@ -99,10 +99,6 @@
 		);
 	}
 
-	function canPlay(d: DownloadUpdate) {
-		return !!d.filePath && /\.(mp4|webm|mp3|m4a|opus)$/i.test(d.filePath);
-	}
-
 	async function copyUrl(url?: string) {
 		if (!url) return;
 		try {
@@ -220,16 +216,6 @@
 										<span class="text-gray-500">- {d.errorMessage}</span>
 									{/if}
 								</p>
-								{#if canPlay(d)}
-									<video
-										class="mt-2 max-h-72 w-full rounded bg-black"
-										controls
-										preload="metadata"
-										src={`/api/media/${d.id}`}
-									>
-										<track kind="captions" />
-									</video>
-								{/if}
 							</div>
 
 							<div class="flex justify-end gap-1">
