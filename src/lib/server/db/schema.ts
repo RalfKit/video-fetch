@@ -82,7 +82,10 @@ export const subscriptions = sqliteTable(
 			.notNull()
 			.$onUpdateFn(() => new Date())
 	},
-	(t) => [uniqueIndex('uq_subscriptions_url').on(t.url), index('idx_subscriptions_due').on(t.enabled, t.nextCheckAt)]
+	(t) => [
+		uniqueIndex('uq_subscriptions_url').on(t.url),
+		index('idx_subscriptions_due').on(t.enabled, t.nextCheckAt)
+	]
 );
 
 export type DownloadAdd = typeof downloads.$inferInsert;

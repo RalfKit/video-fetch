@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import { maxConcurrency } from '$lib';
 	import Cancel from '$lib/assets/cancel.svelte';
 	import Copy from '$lib/assets/copy.svelte';
@@ -27,6 +28,10 @@
 	function removeFromAll(id: string) {
 		activeDownloads.update((list) => list.filter((d) => d.id !== id));
 		finishedDownloads.update((list) => list.filter((d) => d.id !== id));
+	}
+
+	function removeCompleted() {
+		finishedDownloads.update((list) => list.filter((d) => d.status !== 'completed'));
 	}
 
 	onMount(() => {
@@ -139,7 +144,7 @@
 	</section>
 
 	<section class="rounded-lg bg-base-100 p-4 shadow">
-		<h2 class="mb-3 text-lg font-semibold">Active Downloads</h2>
+		<h2 class="mb-3 text-lg font-semibold">Downloads</h2>
 
 		{#if $activeDownloads.length}
 			<div class="space-y-3">
@@ -183,19 +188,42 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="text-sm text-gray-500">No active downloads.</p>
+			<p class="text-sm text-gray-500">No active or queued downloads.</p>
 		{/if}
 	</section>
 
 	<section class="rounded-lg bg-base-100 p-4 shadow">
 		<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-			<h2 class="text-lg font-semibold">Archive</h2>
-			<input
-				type="search"
-				class="input-bordered input input-sm w-full sm:max-w-xs"
-				placeholder="Search history"
-				bind:value={search}
-			/>
+			<h2 class="text-lg font-semibold">Completed Downloads</h2>
+			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+				<input
+					type="search"
+					class="input-bordered input input-sm w-full sm:max-w-xs"
+					placeholder="Search completed downloads"
+					bind:value={search}
+				/>
+				{#if $finishedDownloads.some((d) => d.status === 'completed')}
+					<form
+						method="POST"
+						action="?/clearFinished"
+						use:enhance={({ cancel }) => {
+							if (!confirm('Remove all completed downloads from the list?')) {
+								cancel();
+								return;
+							}
+							return async ({ update }) => {
+								removeCompleted();
+								await update({ reset: false });
+							};
+						}}
+					>
+						<input type="hidden" name="scope" value="completed" />
+						<button class="btn whitespace-nowrap text-error btn-outline btn-sm">
+							Remove all completed
+						</button>
+					</form>
+				{/if}
+			</div>
 		</div>
 
 		{#if visibleFinished($finishedDownloads).length}
@@ -220,19 +248,19 @@
 										<span class="text-gray-500">- {d.errorMessage}</span>
 									{/if}
 								</p>
-								{#if canPlay(d)}
-									<video
-										class="mt-2 max-h-72 w-full rounded bg-black"
-										controls
-										preload="metadata"
-										src={`/api/media/${d.id}`}
-									>
-										<track kind="captions" />
-									</video>
-								{/if}
 							</div>
 
 							<div class="flex justify-end gap-1">
+								{#if d.status === 'completed' && canPlay(d)}
+									<a
+										href={resolve('/video/[id]', { id: d.id })}
+										class="btn btn-ghost btn-xs"
+										title="View video"
+									>
+										View
+									</a>
+								{/if}
+
 								{#if d.status === 'failed'}
 									<form
 										action="?/retryDownload"

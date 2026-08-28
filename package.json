@@ -10,6 +10,8 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test": "vitest run",
+		"test:watch": "vitest",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"db:push": "drizzle-kit push",
@@ -40,13 +42,14 @@
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.53.0",
 		"vite": "^7.3.1",
-		"vite-plugin-devtools-json": "^1.0.0"
+		"vite-plugin-devtools-json": "^1.0.0",
+		"vitest": "^4.1.11"
 	},
 	"dependencies": {
 		"better-sqlite3": "^12.6.0",
-		"p-queue": "^9.1.0",
 		"drizzle-kit": "^0.31.8",
 		"drizzle-orm": "^0.45.1",
+		"p-queue": "^9.1.0",
 		"ytdlp-nodejs": "^3.3.9"
 	}
 }

@@ -1,3 +1,5 @@
+import path from 'path';
+
 // Ungültige Dateiname-Zeichen für Windows: \ / : * ? " < > |
 const INVALID_FILENAME_CHARS = /[\\/:*?"<>|]+/g;
 
@@ -16,6 +18,22 @@ export function sanitizeFilename(input: string): string {
 		.trim();
 
 	return cleaned || 'video';
+}
+
+/**
+ * Resolves `relativePath` against `root` and guarantees the result stays inside
+ * `root`. Protects against path traversal (`..`) and absolute-path injection.
+ * Throws if the resolved path would escape `root`.
+ */
+export function resolveWithinRoot(root: string, relativePath: string): string {
+	const resolvedRoot = path.resolve(root);
+	const absolute = path.resolve(resolvedRoot, relativePath);
+
+	if (absolute !== resolvedRoot && !absolute.startsWith(resolvedRoot + path.sep)) {
+		throw new Error('Resolved path escapes the allowed root directory');
+	}
+
+	return absolute;
 }
 
 export function splitShellLikeArgs(input: string): string[] {

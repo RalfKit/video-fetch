@@ -74,7 +74,12 @@ export const actions: Actions = {
 			const profileId = formData.get('profile_id')?.toString() || 'best';
 			const folder = formData.get('folder')?.toString() || null;
 
-			const raw: Array<{ videoUrl: string; fileName?: string | null; profileId: string; folder: string | null }> = lines.map((line) => {
+			const raw: Array<{
+				videoUrl: string;
+				fileName?: string | null;
+				profileId: string;
+				folder: string | null;
+			}> = lines.map((line) => {
 				const [url, filename] = line.split('\t');
 				return {
 					videoUrl: (url || '').trim(),

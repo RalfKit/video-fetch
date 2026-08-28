@@ -10,6 +10,14 @@
 - `subscriptions.ts`: subscription persistence, polling, and queue enqueueing.
 - Subscription onboarding fetches flat metadata, stores a checkpoint, and only enqueues the requested import slice. The default mode records existing entries without queueing them.
 - `scheduler.ts`: configurable concurrency windows via `CONCURRENCY_WINDOWS`.
+- `db/index.ts`: lazy Drizzle/SQLite connection created on first use (so importing modules, e.g. during the build analyse step, does not open a database).
+- `ytdlp.ts`: resolves the yt-dlp/ffmpeg binaries per environment (`YTDLP_PATH`/`FFMPEG_PATH`, known locations, or the bundled binary).
+- Routes: `api/media/[id]` streams a completed file (path confined to `DOWNLOAD_PATH`), `api/health` reports liveness + DB reachability, and `video/[id]` is the per-video playback page.
+
+## Startup & Lifecycle
+
+- `hooks.server.ts` runs `initializeServer()` from the SvelteKit `init` hook exactly once, after the whole module graph is evaluated. It marks interrupted downloads as failed, reloads state, resumes the queue, applies concurrency windows, and starts the subscription scheduler. A `shutdownServer()` on `SIGTERM`/`SIGINT` clears background timers.
+- Running startup from `init` (instead of as a module-load side effect) avoids the circular-import initialization crash that previously occurred (`Cannot access 'schedulerState' before initialization`).
 
 ## Schema Direction
 
@@ -32,7 +40,7 @@ Future migrations worth considering:
 - The Svelte store still bridges runtime state and database state. A future pass should move queue state into a dedicated event emitter/service and let SSE subscribe to that service.
 - `ytdlp-nodejs` is wrapped directly. A thin local adapter would make CLI behavior easier to test.
 - Subscriptions currently enqueue the subscription URL and let metadata expansion discover entries. This keeps one pipeline, but a later optimization could use flat playlist IDs before inserting child jobs.
-- Build-time imports are now guarded/lazy, but more route modules still import runtime services directly.
+- The database connection is now created lazily, so the production build no longer needs runtime env vars; more route modules still import runtime services directly.
 
 ## Folder Structure Direction
 

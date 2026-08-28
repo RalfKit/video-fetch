@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 
 	type Theme = 'system' | 'dark' | 'light';
 	const STORAGE_KEY = 'theme';
 
-	let theme: Theme = 'system';
+	let theme = $state<Theme>('system');
 
 	function applyTheme(value: Theme) {
 		theme = value;
@@ -31,9 +32,9 @@
 
 <div class="navbar bg-base-200 shadow-sm">
 	<div class="flex-1 gap-2">
-		<a href="/" class="btn text-xl font-bold hover:btn-accent">Video Fetch</a>
-		<a href="/add" class="btn hover:btn-accent">Add</a>
-		<a href="/subscriptions" class="btn hover:btn-accent">Subscriptions</a>
+		<a href={resolve('/')} class="btn text-xl font-bold hover:btn-accent">Video Fetch</a>
+		<a href={resolve('/add')} class="btn hover:btn-accent">Add</a>
+		<a href={resolve('/subscriptions')} class="btn hover:btn-accent">Subscriptions</a>
 	</div>
 
 	<div class="flex-none">

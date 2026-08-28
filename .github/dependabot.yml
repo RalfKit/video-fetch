@@ -1,0 +1,45 @@
+version: 2
+
+updates:
+  # Application dependencies (pnpm). One PR per dependency (no aggregate group)
+  # so a single failing update never blocks the others. Security updates are
+  # opened by Dependabot independently of this monthly schedule.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    commit-message:
+      prefix: build
+      prefix-development: build
+      include: scope
+    labels:
+      - dependencies
+
+  # GitHub Actions: low-risk, grouped into a single PR to reduce noise.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+      include: scope
+    labels:
+      - dependencies
+      - ci
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+
+  # Docker base image updates (a base image change should trigger a release).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+      include: scope
+    labels:
+      - dependencies

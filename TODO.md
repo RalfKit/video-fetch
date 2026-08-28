@@ -1,11 +1,13 @@
-nächster fehler:
-"D:/Projects/video-fetch/src/lib/server/subscriptions.ts:135
-  if (schedulerState.started) return;
-  ^
+# TODO
 
-ReferenceError: Cannot access 'schedulerState' before initialization
-    at startSubscriptionScheduler (D:/Projects/video-fetch/src/lib/server/subscriptions.ts:135:3)
-    at initializeStore (D:/Projects/video-fetch/src/lib/server/store.ts:39:55)
+_No open issues._
 
-Node.js v24.11.1
-"
+## Resolved
+
+- **`ReferenceError: Cannot access 'schedulerState' before initialization`**
+  Root cause: server startup ran as a module-load side effect inside a circular
+  import graph (`store → subscriptions → process → store`), so
+  `startSubscriptionScheduler()` could execute before `subscriptions.ts` had
+  finished initializing its module-level state. Startup now runs once from the
+  SvelteKit `init` server hook (`src/hooks.server.ts`) after the whole module
+  graph is evaluated, and the database connection is created lazily.

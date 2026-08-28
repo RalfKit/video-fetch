@@ -7,10 +7,14 @@
 	let showFilters = $state(false);
 	let deletedIds = $state<string[]>([]);
 
-	const subscriptions = $derived(data.subscriptions.filter((subscription) => !deletedIds.includes(subscription.id)));
+	const subscriptions = $derived(
+		data.subscriptions.filter((subscription) => !deletedIds.includes(subscription.id))
+	);
 
 	function confirmDelete(url: string) {
-		return confirm(`Delete this subscription?\n\n${url}\n\nDownloaded files and history will stay untouched.`);
+		return confirm(
+			`Delete this subscription?\n\n${url}\n\nDownloaded files and history will stay untouched.`
+		);
 	}
 
 	function removeSubscription(id: string) {
@@ -19,12 +23,23 @@
 </script>
 
 <div class="w-full max-w-5xl space-y-4 px-4">
-	<form method="POST" action="?/add" class="grid gap-4 rounded-lg bg-base-100 p-6 shadow" use:enhance>
+	<form
+		method="POST"
+		action="?/add"
+		class="grid gap-4 rounded-lg bg-base-100 p-6 shadow"
+		use:enhance
+	>
 		<h1 class="text-xl font-semibold">Subscriptions</h1>
 
 		<label class="flex flex-col">
 			<span class="font-medium">Channel or playlist URL</span>
-			<input name="url" type="url" required placeholder="https://" class="input-bordered input w-full" />
+			<input
+				name="url"
+				type="url"
+				required
+				placeholder="https://"
+				class="input-bordered input w-full"
+			/>
 		</label>
 
 		<div class="grid gap-4 md:grid-cols-2">
@@ -49,7 +64,7 @@
 			<label class="flex flex-col">
 				<span class="font-medium">Download Profile</span>
 				<select name="profile_id" class="select-bordered select w-full">
-					{#each data.profiles as profile}
+					{#each data.profiles as profile (profile.id)}
 						<option value={profile.id} selected={profile.isDefault}>{profile.name}</option>
 					{/each}
 				</select>
@@ -59,7 +74,7 @@
 				<span class="font-medium">Subfolder</span>
 				<select name="folder" class="select-bordered select w-full">
 					<option value="">No subfolder</option>
-					{#each data.folders as folder}
+					{#each data.folders as folder (folder)}
 						<option value={folder}>{folder}</option>
 					{/each}
 				</select>
@@ -80,12 +95,24 @@
 			{#if importMode === 'last_days'}
 				<label class="flex flex-col">
 					<span class="font-medium">Days</span>
-					<input name="import_limit" type="number" min="1" value="7" class="input-bordered input w-full" />
+					<input
+						name="import_limit"
+						type="number"
+						min="1"
+						value="7"
+						class="input-bordered input w-full"
+					/>
 				</label>
 			{:else if importMode === 'last_videos'}
 				<label class="flex flex-col">
 					<span class="font-medium">Videos</span>
-					<input name="import_limit" type="number" min="1" value="20" class="input-bordered input w-full" />
+					<input
+						name="import_limit"
+						type="number"
+						min="1"
+						value="20"
+						class="input-bordered input w-full"
+					/>
 				</label>
 			{/if}
 		</div>
@@ -174,7 +201,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each subscriptions as subscription}
+						{#each subscriptions as subscription (subscription.id)}
 							<tr>
 								<td class="max-w-sm truncate">{subscription.url}</td>
 								<td>{subscription.intervalMinutes} min</td>
@@ -193,7 +220,7 @@
 								<td class="flex justify-end gap-2">
 									<form method="POST" action="?/checkNow" use:enhance>
 										<input type="hidden" name="id" value={subscription.id} />
-										<button class="btn btn-sm btn-outline">Check now</button>
+										<button class="btn btn-outline btn-sm">Check now</button>
 									</form>
 									<form method="POST" action="?/toggle" use:enhance>
 										<input type="hidden" name="id" value={subscription.id} />
@@ -202,7 +229,8 @@
 											name="enabled"
 											value={subscription.enabled ? 'false' : 'true'}
 										/>
-										<button class="btn btn-sm">{subscription.enabled ? 'Disable' : 'Enable'}</button>
+										<button class="btn btn-sm">{subscription.enabled ? 'Disable' : 'Enable'}</button
+										>
 									</form>
 									<form
 										method="POST"
@@ -215,7 +243,7 @@
 										}}
 									>
 										<input type="hidden" name="id" value={subscription.id} />
-										<button class="btn btn-sm btn-error btn-outline">Delete</button>
+										<button class="btn btn-outline btn-sm btn-error">Delete</button>
 									</form>
 								</td>
 							</tr>
