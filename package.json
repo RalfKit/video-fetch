@@ -47,7 +47,7 @@
 	},
 	"dependencies": {
 		"better-sqlite3": "^12.6.0",
-		"drizzle-kit": "^0.31.8",
+		"drizzle-kit": "^0.31.10",
 		"drizzle-orm": "^0.45.1",
 		"p-queue": "^9.1.0",
 		"ytdlp-nodejs": "^3.3.9"
