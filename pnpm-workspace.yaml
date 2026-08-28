@@ -1,5 +1,7 @@
 allowBuilds:
   better-sqlite3: true
+  esbuild: false
+  ytdlp-nodejs: true
 onlyBuiltDependencies:
   - better-sqlite3
   - esbuild
