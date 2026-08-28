@@ -287,8 +287,7 @@
 						class="textarea-bordered textarea mt-2 w-full"
 						placeholder={`https://example.com/video1\tMy Video 1`}
 						oninput={(e) => updateFromTextarea(e.currentTarget.value)}
-						onkeydown={handleTextareaKeydown}
-					></textarea>
+						onkeydown={handleTextareaKeydown}></textarea>
 				</div>
 
 				<label class="flex flex-col">
