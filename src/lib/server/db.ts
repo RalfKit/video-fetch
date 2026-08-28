@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from './db/index';
 import { downloads as downloadsSchema } from './db/schema';
 import { downloads } from './store';
@@ -122,4 +122,42 @@ export async function deleteDownload(id: string) {
 			console.warn('[delete] Failed to remove file for download', id, err);
 		}
 	}
+}
+
+/**
+ * Bulk-löschen aller Downloads mit einem der angegebenen Status.
+ *
+ * Verhält sich wie {@link deleteDownload}: standardmäßig werden nur die
+ * Datenbankeinträge entfernt; ist `DELETE_FILE_ON_DELETE` aktiv, werden auch die
+ * zugehörigen Dateien gelöscht (mit dem sicheren Pfad-Guard). Gibt die Anzahl
+ * der entfernten Einträge zurück.
+ */
+export async function deleteDownloadsByStatus(statuses: DownloadStatus[]) {
+	if (statuses.length === 0) return 0;
+
+	const rows = await db
+		.select({ id: downloadsSchema.id, filePath: downloadsSchema.filePath })
+		.from(downloadsSchema)
+		.where(inArray(downloadsSchema.status, statuses));
+
+	if (rows.length === 0) return 0;
+
+	const removedIds = new Set(rows.map((row) => row.id));
+
+	await db.delete(downloadsSchema).where(inArray(downloadsSchema.status, statuses));
+
+	downloads.update((list) => list.filter((item) => !removedIds.has(item.id)));
+
+	if (DELETE_FILE_ON_DELETE) {
+		for (const row of rows) {
+			if (!row.filePath) continue;
+			try {
+				await deleteDownloadFile(row.filePath);
+			} catch (err) {
+				console.warn('[delete] Failed to remove file for download', row.id, err);
+			}
+		}
+	}
+
+	return rows.length;
 }

@@ -3,9 +3,16 @@ import { concurrency, downloads, paused } from '$lib/server/store';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { get } from 'svelte/store';
-import { deleteDownload, setStatus } from '$lib/server/db';
+import { deleteDownload, deleteDownloadsByStatus, setStatus } from '$lib/server/db';
 import { removeFromQueue } from '$lib/server/process';
 import { processDownloads } from '$lib/server/process';
+import type { DownloadStatus } from '$lib/types/download';
+
+const CLEAR_SCOPES: Record<string, DownloadStatus[]> = {
+	completed: ['completed'],
+	failed: ['failed'],
+	finished: ['completed', 'failed', 'cancelled']
+};
 
 export const load: PageServerLoad = () => {
 	const download = get(downloads);
@@ -97,5 +104,14 @@ export const actions = {
 		void processDownloads();
 
 		return { success: true };
+	},
+	clearFinished: async ({ request }) => {
+		const formData = await request.formData();
+		const scope = formData.get('scope')?.toString() || 'completed';
+		const statuses = CLEAR_SCOPES[scope] ?? CLEAR_SCOPES.completed;
+
+		const removed = await deleteDownloadsByStatus(statuses);
+
+		return { success: true, removed };
 	}
 } satisfies Actions;
