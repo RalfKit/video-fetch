@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Base: pinned pnpm + manifests (shared by build and prod-deps) ---
-FROM node:24.12.0-slim AS base
+FROM node:26.7.0-slim AS base
 WORKDIR /app
 ENV CI=true
 
@@ -26,7 +26,7 @@ FROM base AS prod-deps
 RUN pnpm install --frozen-lockfile --prod --node-linker=hoisted
 
 # --- Runtime ---
-FROM node:24.12.0-slim AS runtime
+FROM node:26.7.0-slim AS runtime
 WORKDIR /app
 
 # Runtime system dependencies only:
