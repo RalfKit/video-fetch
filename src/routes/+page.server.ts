@@ -1,4 +1,3 @@
-// +page.server.ts
 import { concurrency, downloads, paused } from '$lib/server/store';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
