@@ -1,27 +1,27 @@
 # Video Fetcher
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/blacktiger001/videofetch.svg)](https://hub.docker.com/r/blacktiger001/videofetch)
-
 A web-based video download service powered by **yt-dlp** and a **SvelteKit** frontend.
 
 ## 📌 Overview
 
-Video Fetcher is a self-hosted web application for downloading videos from URLs with configurable quality, naming, and concurrency control.
+Video Fetcher is a self-hosted web application for downloading videos from URLs with configurable download profiles, naming, and concurrency control.
 
 It is designed as a lightweight alternative to manual video downloading workflows, providing both a UI and a simple HTTP API.
 
 ## ✨ Features
 
 - Add video URLs via web interface or API
-- Download videos in different quality modes (`highest`, `lowest`)
+- Download profiles (e.g. best quality, 1080p MP4, audio only) mapped to yt-dlp options
 - Custom filenames or automatic title-based naming
 - Real-time download status updates (SSE)
 - Queue-based download handling with concurrency control
-- Separate views for active and completed downloads
+- Two sections: **Downloads** (queued + in progress) and **Completed Downloads**
+- Dedicated per-video playback page for completed downloads
+- Bulk removal of completed downloads
 - Async metadata fetching so add requests return immediately
 - Optional safe subfolders under `DOWNLOAD_PATH`
-- Download profiles, subscriptions, and searchable archive playback
-- Subscription onboarding modes that default to future uploads only
+- Subscriptions with onboarding modes that default to future uploads only
+- Health endpoint and Docker `HEALTHCHECK`
 
 ## ⚙️ Configuration
 
@@ -46,11 +46,11 @@ TEMP_DOWNLOAD_PATH=/downloads/.incomplete
 
 ### `DATABASE_PATH`
 
-Path for internal database storage.
+Path to the internal SQLite database file. Migrations are applied automatically on container start. Mount the containing directory as a persistent volume:
 
 ```yaml
 volumes:
-  - ./data/downloads.db:/data/downloads.db
+  - ./data:/data
 ```
 
 ### `PUBLIC_DEFAULT_CONCURRENCY`
@@ -122,8 +122,15 @@ Subscriptions can also filter before enqueueing by excluding Shorts, duration li
 1. Start the container (Docker or Docker Compose)
 2. Open `http://localhost:3000`
 3. Add video URLs
-4. Select quality and optional filename settings
-5. Monitor download progress in real time
+4. Select a download profile and optional filename settings
+5. Monitor download progress in real time in the **Downloads** section
+6. Play a finished video from the **Completed Downloads** section via its **View** action (a dedicated `/video/<id>` page)
+
+### Managing downloads
+
+- The **Downloads** section shows queued and in-progress items with live status and progress; the **Completed Downloads** section lists finished (completed/failed/cancelled) items and is searchable.
+- **View** opens a completed download on its own playback page (served by the media endpoint). If the file has been moved or removed, the page shows a clear "no longer available" message instead of failing.
+- **Remove all completed** clears completed entries at once (after a confirmation). Like the single delete, it only removes database/UI entries by default and also deletes the files when `DELETE_FILE_ON_DELETE=true` (see [Configuration](#️-configuration)).
 
 ## 🌐 API
 
@@ -161,7 +168,17 @@ Adds one or multiple video download jobs. The endpoint validates basic payload s
 
 Lists existing subfolders under `DOWNLOAD_PATH` for safe folder selection.
 
+### GET `/api/media/[id]`
+
+Streams the downloaded file for a completed download. The resolved path is confined to `DOWNLOAD_PATH`; missing files return `404` and out-of-bounds paths return `403`. Used by the `/video/<id>` playback page.
+
+### GET `/api/health`
+
+Returns `{ "status": "ok" }` (HTTP 200) when the process is up and the database is reachable, or HTTP 503 otherwise. It performs no network access or downloads, so it is safe for frequent polling and is used by the Docker `HEALTHCHECK`.
+
 ## 🐳 Docker
+
+Images are published to `<dockerhub-username>/videofetch` (the `DOCKERHUB_USERNAME` configured for the release workflow), tagged with the released version and `latest`.
 
 ### Run container
 
@@ -170,8 +187,8 @@ docker run -d \
   --name videofetch \
   -p 3000:3000 \
   -v /absolute/path/to/downloads:/downloads \
-  -v /absolute/path/to/data/downloads.db:/data/downloads.db \
-  blacktiger001/videofetch
+  -v /absolute/path/to/data:/data \
+  <dockerhub-username>/videofetch:latest
 ```
 
 ### Docker Compose
@@ -179,14 +196,14 @@ docker run -d \
 ```yaml
 services:
   videofetch:
-    image: blacktiger001/videofetch
+    image: <dockerhub-username>/videofetch:latest
     container_name: videofetch
     restart: unless-stopped
     ports:
       - '3000:3000'
     volumes:
       - ./downloads:/downloads
-      - ./data/downloads.db:/data/downloads.db
+      - ./data:/data
 ```
 
 ## ⚠️ Notes
