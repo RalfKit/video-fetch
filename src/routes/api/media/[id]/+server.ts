@@ -1,10 +1,25 @@
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'node:stream';
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db/index';
 import { downloads } from '$lib/server/db/schema';
 import { resolveWithinDownloadFolder } from '$lib/server/folders';
+
+/**
+ * Streams a file (or byte range) as a Web `ReadableStream`.
+ *
+ * A raw Node `fs.ReadStream` used directly as a `Response` body crashes the
+ * server under Node's web-streams/undici bridge ("ReadableStream is already
+ * closed") when the response completes or the client aborts (e.g. while
+ * seeking). Converting via `Readable.toWeb` gives a properly managed web stream
+ * whose lifecycle (close/cancel) is handled without throwing.
+ */
+function fileWebStream(absolutePath: string, options?: { start: number; end: number }) {
+	const nodeStream = fs.createReadStream(absolutePath, options);
+	return Readable.toWeb(nodeStream) as unknown as ReadableStream<Uint8Array>;
+}
 
 export const GET: RequestHandler = async ({ params, request }) => {
 	if (!params.id) throw error(404, 'Media not found');
@@ -50,8 +65,7 @@ export const GET: RequestHandler = async ({ params, request }) => {
 	// Partial content: stream only the requested byte range so seeking works.
 	if (range) {
 		const { start, end } = range;
-		const stream = fs.createReadStream(absolutePath, { start, end });
-		return new Response(stream as unknown as BodyInit, {
+		return new Response(fileWebStream(absolutePath, { start, end }), {
 			status: 206,
 			headers: {
 				...headers,
@@ -62,8 +76,7 @@ export const GET: RequestHandler = async ({ params, request }) => {
 	}
 
 	// Full response with an explicit length so the browser knows the duration.
-	const stream = fs.createReadStream(absolutePath);
-	return new Response(stream as unknown as BodyInit, {
+	return new Response(fileWebStream(absolutePath), {
 		status: 200,
 		headers: { ...headers, 'Content-Length': String(size) }
 	});
