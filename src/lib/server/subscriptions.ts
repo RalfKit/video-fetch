@@ -532,14 +532,6 @@ async function enqueueEntries(subscription: Subscription, entries: SubscriptionE
 	if (deletedSubscriptions.has(subscription.id) || !(await subscriptionExists(subscription.id)))
 		return;
 
-	console.log(
-		entries.map((e) => ({
-			title: e.title,
-			url: e.url,
-			isShort: e.isShort
-		}))
-	);
-
 	const rawItems = entries.map((entry) => ({
 		videoUrl: entry.url,
 		source: 'subscription' as const,
