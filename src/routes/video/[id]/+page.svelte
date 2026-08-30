@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.title} · Video-Fetch</title>
+	<title>{data.title ?? 'Video'} — Video Fetcher</title>
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl space-y-4 px-4">
