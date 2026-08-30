@@ -9,7 +9,8 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>Video-Fetch</title>
+	<!-- Fallback title; each route overrides this with its own in <svelte:head>. -->
+	<title>Video Fetcher</title>
 </svelte:head>
 
 <div class="flex min-h-screen flex-col bg-base-300">

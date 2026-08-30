@@ -3,7 +3,10 @@
 </script>
 
 <footer class="footer-center footer bg-base-200 p-4 text-sm text-gray-500 sm:footer-horizontal">
-	<p>This tool is provided “as is”. Use at your own risk.</p>
+	<p class="max-w-2xl text-center">
+		Provided “as is” without warranty or liability. Users are responsible for how they use this
+		software and for complying with applicable laws when downloading or using content.
+	</p>
 	<a
 		href="https://github.com/RalfKit/video-fetch"
 		class="btn btn-square hover:btn-accent"

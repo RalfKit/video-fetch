@@ -119,6 +119,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Downloads — Video Fetcher</title>
+</svelte:head>
+
 <div class="mx-auto w-full max-w-5xl space-y-4 px-4">
 	<section class="space-y-3 rounded-lg bg-base-100 p-4 shadow">
 		<form method="POST" action="?/setConcurrency" use:enhance>

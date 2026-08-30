@@ -170,7 +170,7 @@ Lists existing subfolders under `DOWNLOAD_PATH` for safe folder selection.
 
 ### GET `/api/media/[id]`
 
-Streams the downloaded file for a completed download. The resolved path is confined to `DOWNLOAD_PATH`; missing files return `404` and out-of-bounds paths return `403`. Used by the `/video/<id>` playback page.
+Streams the downloaded file for a completed download, with HTTP Range support (`Accept-Ranges`, `206 Partial Content`) so the browser can seek within the video. The resolved path is confined to `DOWNLOAD_PATH`; missing files return `404` and out-of-bounds paths return `403`. Used by the `/video/<id>` playback page.
 
 ### GET `/api/health`
 

@@ -22,6 +22,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Subscriptions — Video Fetcher</title>
+</svelte:head>
+
 <div class="w-full max-w-5xl space-y-4 px-4">
 	<form
 		method="POST"
