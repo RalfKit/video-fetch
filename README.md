@@ -178,7 +178,7 @@ Returns `{ "status": "ok" }` (HTTP 200) when the process is up and the database 
 
 ## 🐳 Docker
 
-Images are published to `<dockerhub-username>/videofetch` (the `DOCKERHUB_USERNAME` configured for the release workflow), tagged with the released version and `latest`.
+Images are published to `blacktiger001/videofetch` (the `DOCKERHUB_USERNAME` configured for the release workflow), tagged with the released version and `latest`.
 
 ### Run container
 
@@ -188,7 +188,7 @@ docker run -d \
   -p 3000:3000 \
   -v /absolute/path/to/downloads:/downloads \
   -v /absolute/path/to/data:/data \
-  <dockerhub-username>/videofetch:latest
+  blacktiger001/videofetch:latest
 ```
 
 ### Docker Compose
@@ -196,7 +196,7 @@ docker run -d \
 ```yaml
 services:
   videofetch:
-    image: <dockerhub-username>/videofetch:latest
+    image: blacktiger001/videofetch:latest
     container_name: videofetch
     restart: unless-stopped
     ports:
