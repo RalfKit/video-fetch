@@ -207,7 +207,7 @@
 					<tbody>
 						{#each subscriptions as subscription (subscription.id)}
 							<tr>
-								<td class="max-w-sm truncate">{subscription.url}</td>
+								<td class="max-w-sm truncate" title={subscription.url}>{subscription.url}</td>
 								<td>{subscription.intervalMinutes} min</td>
 								<td>
 									{subscription.lastCheckedAt

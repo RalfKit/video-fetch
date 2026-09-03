@@ -1,9 +1,10 @@
-import { and, eq, lte, or } from 'drizzle-orm';
+import { and, eq, lte, or, type SQL } from 'drizzle-orm';
 import { db } from './db/index';
 import { downloads, subscriptions, type Subscription } from './db/schema';
 import { prepareDownloadItems } from './downloads-helper';
 import { addDownloads } from './db';
 import { processDownloads } from './process';
+import { reliableExtractorVideoId } from './media-identity';
 import type { PlaylistInfo, VideoInfo } from 'ytdlp-nodejs';
 
 export type SubscriptionImportMode = 'new_only' | 'last_days' | 'last_videos' | 'full_archive';
@@ -405,15 +406,21 @@ async function filterDuplicates(entries: SubscriptionEntry[], stats: Record<stri
 	for (const entry of entries) {
 		const extractor = stringOrNull(entry.raw.extractor);
 		const id = stringOrNull(entry.raw.id);
+		const identityId = reliableExtractorVideoId(extractor, id);
+
+		// Always dedup by exact URL. Only add the media-identity clause when the
+		// identity is reliable (never for `generic`, whose id is URL-derived).
+		const conditions: SQL[] = [eq(downloads.videoUrl, entry.url)];
+		if (extractor && identityId) {
+			conditions.push(
+				and(eq(downloads.extractor, extractor), eq(downloads.extractorVideoId, identityId)) as SQL
+			);
+		}
+
 		const duplicate = await db
 			.select({ id: downloads.id })
 			.from(downloads)
-			.where(
-				or(
-					eq(downloads.videoUrl, entry.url),
-					and(eq(downloads.extractor, extractor ?? ''), eq(downloads.extractorVideoId, id ?? ''))
-				)
-			)
+			.where(conditions.length === 1 ? conditions[0] : or(...conditions))
 			.limit(1);
 
 		if (duplicate.length > 0) {
