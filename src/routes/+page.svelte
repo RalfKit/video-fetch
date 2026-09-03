@@ -181,7 +181,7 @@
 
 								<form action="?/cancelDownload" method="post" use:enhance>
 									<input type="hidden" name="id" value={d.id} />
-									<button class="btn text-error btn-ghost btn-xs">
+									<button class="btn btn-ghost text-error btn-xs">
 										<Cancel class="size-4" />
 									</button>
 								</form>
@@ -221,7 +221,7 @@
 				</select>
 				<input
 					type="search"
-					class="input-bordered input input-sm w-full sm:max-w-xs"
+					class="input-bordered input w-full input-sm sm:max-w-xs"
 					placeholder="Search finished downloads"
 					bind:value={search}
 				/>
@@ -241,7 +241,7 @@
 						}}
 					>
 						<input type="hidden" name="scope" value="completed" />
-						<button class="btn whitespace-nowrap text-error btn-outline btn-sm">
+						<button class="btn btn-outline whitespace-nowrap text-error btn-sm">
 							Remove all completed
 						</button>
 					</form>
@@ -315,7 +315,7 @@
 									use:enhance={() => removeFromAll(d.id)}
 								>
 									<input type="hidden" name="id" value={d.id} />
-									<button class="btn text-error btn-ghost btn-xs">
+									<button class="btn btn-ghost text-error btn-xs">
 										<Trash class="size-4" />
 									</button>
 								</form>
