@@ -5,6 +5,7 @@ import { addDownloads, findDuplicateByMediaIdentity, setStatus, updateDownload }
 import type { DownloadAdd, Download } from './db/schema';
 import { sanitizeFilename } from './utils';
 import { reliableExtractorVideoId } from './media-identity';
+import { ENABLE_THUMBNAILS } from './config';
 import type { PlaylistInfo, VideoInfo } from 'ytdlp-nodejs';
 
 type YtInfo = VideoInfo | PlaylistInfo;
@@ -119,7 +120,7 @@ async function fetchMetadataAndQueue(item: Download) {
 				title: videoInfo.title,
 				extractor: videoInfo.extractor,
 				extractorVideoId: identityVideoId,
-				thumbnailUrl: videoInfo.thumbnail,
+				thumbnailUrl: ENABLE_THUMBNAILS ? videoInfo.thumbnail : null,
 				metadataJson: compactMetadata(videoInfo as unknown as Record<string, unknown>)
 			});
 			await setStatus(item.id, 'cancelled', 'Already downloaded or queued');
@@ -133,7 +134,7 @@ async function fetchMetadataAndQueue(item: Download) {
 			title: videoInfo.title,
 			extractor: videoInfo.extractor,
 			extractorVideoId: identityVideoId,
-			thumbnailUrl: videoInfo.thumbnail,
+			thumbnailUrl: ENABLE_THUMBNAILS ? videoInfo.thumbnail : null,
 			duration: videoInfo.duration,
 			metadataJson: compactMetadata(videoInfo as unknown as Record<string, unknown>)
 		});
@@ -178,7 +179,7 @@ function entryToDownload(parent: Download, entry: Record<string, unknown>): Down
 	const title = stringOrNull(entry.title);
 	const extractor = stringOrNull(entry.extractor) || parent.extractor;
 	const extractorVideoId = reliableExtractorVideoId(extractor, stringOrNull(entry.id));
-	const thumbnailUrl = stringOrNull(entry.thumbnail);
+	const thumbnailUrl = ENABLE_THUMBNAILS ? stringOrNull(entry.thumbnail) : null;
 
 	return {
 		videoUrl: entryUrl,

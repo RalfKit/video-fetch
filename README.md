@@ -94,6 +94,17 @@ Deletion is strictly confined to `DOWNLOAD_PATH`: path traversal (`..`) and abso
 DELETE_FILE_ON_DELETE=true
 ```
 
+### `ENABLE_THUMBNAILS`
+
+Controls whether thumbnails are used.
+
+- Default: `true`.
+- When `false`, no thumbnail URLs are stored and yt-dlp does not download thumbnail files (its `writeThumbnail` option is forced off even for profiles like `archive`). The UI then simply shows no thumbnails.
+
+```env
+ENABLE_THUMBNAILS=false
+```
+
 ### `YTDLP_PATH` / `FFMPEG_PATH`
 
 Optional explicit paths to the `yt-dlp` and `ffmpeg` binaries.
