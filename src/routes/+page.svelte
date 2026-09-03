@@ -211,7 +211,7 @@
 			<h2 class="text-lg font-semibold">Finished Downloads</h2>
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
 				<select
-					class="select-bordered select select-sm w-full sm:w-auto"
+					class="select-bordered select w-full select-sm sm:w-auto"
 					bind:value={statusFilter}
 					aria-label="Filter by status"
 				>
