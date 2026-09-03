@@ -4,6 +4,7 @@ import { get } from 'svelte/store';
 import { addDownloads, findDuplicateByMediaIdentity, setStatus, updateDownload } from './db';
 import type { DownloadAdd, Download } from './db/schema';
 import { sanitizeFilename } from './utils';
+import { reliableExtractorVideoId } from './media-identity';
 import type { PlaylistInfo, VideoInfo } from 'ytdlp-nodejs';
 
 type YtInfo = VideoInfo | PlaylistInfo;
@@ -97,7 +98,7 @@ async function fetchMetadataAndQueue(item: Download) {
 			await updateDownload(item.id, {
 				title: info.title,
 				extractor: info.extractor,
-				extractorVideoId: info.id,
+				extractorVideoId: reliableExtractorVideoId(info.extractor, info.id),
 				metadataJson: JSON.stringify({
 					id: info.id,
 					title: info.title,
@@ -110,12 +111,14 @@ async function fetchMetadataAndQueue(item: Download) {
 		}
 
 		const videoInfo = info as VideoInfo;
-		const duplicate = await findDuplicateByMediaIdentity(videoInfo.extractor, videoInfo.id);
+		// Only a reliable identity (non-generic) is stored and used for dedup.
+		const identityVideoId = reliableExtractorVideoId(videoInfo.extractor, videoInfo.id);
+		const duplicate = await findDuplicateByMediaIdentity(videoInfo.extractor, identityVideoId);
 		if (duplicate && duplicate.id !== item.id) {
 			await updateDownload(item.id, {
 				title: videoInfo.title,
 				extractor: videoInfo.extractor,
-				extractorVideoId: videoInfo.id,
+				extractorVideoId: identityVideoId,
 				thumbnailUrl: videoInfo.thumbnail,
 				metadataJson: compactMetadata(videoInfo as unknown as Record<string, unknown>)
 			});
@@ -129,7 +132,7 @@ async function fetchMetadataAndQueue(item: Download) {
 			fileName: item.fileName || buildFileName(item, videoInfo.title),
 			title: videoInfo.title,
 			extractor: videoInfo.extractor,
-			extractorVideoId: videoInfo.id,
+			extractorVideoId: identityVideoId,
 			thumbnailUrl: videoInfo.thumbnail,
 			duration: videoInfo.duration,
 			metadataJson: compactMetadata(videoInfo as unknown as Record<string, unknown>)
@@ -174,7 +177,7 @@ function entryToDownload(parent: Download, entry: Record<string, unknown>): Down
 
 	const title = stringOrNull(entry.title);
 	const extractor = stringOrNull(entry.extractor) || parent.extractor;
-	const extractorVideoId = stringOrNull(entry.id);
+	const extractorVideoId = reliableExtractorVideoId(extractor, stringOrNull(entry.id));
 	const thumbnailUrl = stringOrNull(entry.thumbnail);
 
 	return {
