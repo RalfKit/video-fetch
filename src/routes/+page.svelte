@@ -17,6 +17,7 @@
 	const activeDownloads = writable<DownloadUpdate[]>([]);
 	const finishedDownloads = writable<DownloadUpdate[]>([]);
 	let search = $state('');
+	let statusFilter = $state<'all' | 'completed' | 'cancelled'>('all');
 
 	const activeStatuses = ['downloading', 'pending', 'metadata_fetching', 'queued'];
 	const finishedStatuses = ['completed', 'failed', 'cancelled'];
@@ -93,15 +94,22 @@
 		return parts.join(' · ');
 	}
 
+	function matchesStatusFilter(d: DownloadUpdate) {
+		if (statusFilter === 'completed') return d.status === 'completed';
+		if (statusFilter === 'cancelled') return d.status === 'cancelled';
+		return true;
+	}
+
 	function visibleFinished(items: DownloadUpdate[]) {
 		const term = search.trim().toLowerCase();
-		if (!term) return items;
 
-		return items.filter((d) =>
-			[d.fileName, d.title, d.videoUrl, d.folder, d.errorMessage]
+		return items.filter((d) => {
+			if (!matchesStatusFilter(d)) return false;
+			if (!term) return true;
+			return [d.fileName, d.title, d.videoUrl, d.folder, d.errorMessage]
 				.filter(Boolean)
-				.some((value) => String(value).toLowerCase().includes(term))
-		);
+				.some((value) => String(value).toLowerCase().includes(term));
+		});
 	}
 
 	function canPlay(d: DownloadUpdate) {
@@ -156,7 +164,9 @@
 					<div class="rounded-lg border bg-base-200 p-3">
 						<div class="flex justify-between gap-3">
 							<div class="min-w-0">
-								<p class="truncate font-medium">{d.fileName ?? d.title ?? 'Unnamed'}</p>
+								<p class="truncate font-medium" title={d.fileName ?? d.title ?? 'Unnamed'}>
+									{d.fileName ?? d.title ?? 'Unnamed'}
+								</p>
 								<p class="text-xs text-gray-500">{statusLabel(d.status)}</p>
 							</div>
 
@@ -198,12 +208,21 @@
 
 	<section class="rounded-lg bg-base-100 p-4 shadow">
 		<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-			<h2 class="text-lg font-semibold">Completed Downloads</h2>
+			<h2 class="text-lg font-semibold">Finished Downloads</h2>
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+				<select
+					class="select-bordered select select-sm w-full sm:w-auto"
+					bind:value={statusFilter}
+					aria-label="Filter by status"
+				>
+					<option value="all">All</option>
+					<option value="completed">Completed</option>
+					<option value="cancelled">Canceled</option>
+				</select>
 				<input
 					type="search"
 					class="input-bordered input input-sm w-full sm:max-w-xs"
-					placeholder="Search completed downloads"
+					placeholder="Search finished downloads"
 					bind:value={search}
 				/>
 				{#if $finishedDownloads.some((d) => d.status === 'completed')}
@@ -244,8 +263,12 @@
 							</div>
 
 							<div class="min-w-0 space-y-1">
-								<p class="truncate font-medium">{d.fileName ?? d.title ?? 'Unnamed'}</p>
-								<p class="text-xs text-gray-500">{d.title ?? d.videoUrl}</p>
+								<p class="truncate font-medium" title={d.fileName ?? d.title ?? 'Unnamed'}>
+									{d.fileName ?? d.title ?? 'Unnamed'}
+								</p>
+								<p class="truncate text-xs text-gray-500" title={d.title ?? d.videoUrl}>
+									{d.title ?? d.videoUrl}
+								</p>
 								<p class={d.status === 'failed' ? 'text-sm text-error' : 'text-sm text-success'}>
 									{statusLabel(d.status)}
 									{#if d.errorMessage}
@@ -265,14 +288,16 @@
 									</a>
 								{/if}
 
-								{#if d.status === 'failed'}
+								{#if d.status === 'failed' || d.status === 'cancelled'}
 									<form
 										action="?/retryDownload"
 										method="post"
 										use:enhance={() => removeFromFinished(d.id)}
 									>
 										<input type="hidden" name="id" value={d.id} />
-										<button class="btn btn-ghost btn-xs"><Retry class="size-4" /></button>
+										<button class="btn btn-ghost btn-xs" title="Retry download">
+											<Retry class="size-4" />
+										</button>
 									</form>
 								{/if}
 
@@ -300,7 +325,7 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="text-sm text-gray-500">No completed downloads yet.</p>
+			<p class="text-sm text-gray-500">No finished downloads yet.</p>
 		{/if}
 	</section>
 </div>
