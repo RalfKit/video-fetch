@@ -13,7 +13,7 @@
 		[
 			"@semantic-release/exec",
 			{
-				"prepareCmd": "docker buildx build --push --label org.opencontainers.image.version=${nextRelease.version} --label org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY -t $DOCKERHUB_USERNAME/videofetch:${nextRelease.version} -t $DOCKERHUB_USERNAME/videofetch:latest ."
+				"prepareCmd": "pnpm exec prettier --write CHANGELOG.md && docker buildx build --push --label org.opencontainers.image.version=${nextRelease.version} --label org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY -t $DOCKERHUB_USERNAME/videofetch:${nextRelease.version} -t $DOCKERHUB_USERNAME/videofetch:latest ."
 			}
 		],
 		[
