@@ -5,6 +5,7 @@ import { downloads } from './store';
 import type { DownloadStatus } from '$lib/types/download';
 import { DELETE_FILE_ON_DELETE } from './config';
 import { deleteDownloadFile } from './folders';
+import { isReliableMediaIdentity } from './media-identity';
 
 export async function addDownload(download: typeof downloadsSchema.$inferInsert) {
 	const newDownload = await db
@@ -83,7 +84,11 @@ export async function findDuplicateByMediaIdentity(
 	extractor?: string | null,
 	videoId?: string | null
 ) {
-	if (!extractor || !videoId) return null;
+	// Only match on a reliable media identity. In particular the `generic`
+	// extractor derives its id from the URL (see media-identity.ts), which is not
+	// a stable identity and must never be used to cancel a different video.
+	// (The explicit truthiness checks also narrow the types for the query below.)
+	if (!extractor || !videoId || !isReliableMediaIdentity(extractor, videoId)) return null;
 
 	const [match] = await db
 		.select()

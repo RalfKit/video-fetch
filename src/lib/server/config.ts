@@ -20,6 +20,17 @@ export const DELETE_FILE_ON_DELETE = /^(1|true|yes|on)$/i.test(
 	(private_env.DELETE_FILE_ON_DELETE ?? '').trim()
 );
 
+/**
+ * Ob Thumbnails verwendet werden sollen. Standard: aktiviert.
+ * Deaktivierung über `ENABLE_THUMBNAILS=false` (bzw. 0/no/off).
+ *
+ * Bei Deaktivierung werden keine Thumbnail-URLs gespeichert und yt-dlp lädt
+ * keine Thumbnail-Dateien herunter (writeThumbnail wird erzwungen abgeschaltet).
+ */
+export const ENABLE_THUMBNAILS = !/^(0|false|no|off)$/i.test(
+	(private_env.ENABLE_THUMBNAILS ?? '').trim()
+);
+
 // Stelle sicher, dass der Ordner existiert
 if (!fs.existsSync(DOWNLOAD_FOLDER)) {
 	fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });

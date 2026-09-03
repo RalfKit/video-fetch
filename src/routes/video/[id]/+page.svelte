@@ -13,7 +13,7 @@
 	<a href={resolve('/')} class="btn btn-ghost btn-sm">← Back to downloads</a>
 
 	<section class="space-y-3 rounded-lg bg-base-100 p-4 shadow">
-		<h1 class="truncate text-lg font-semibold">{data.title}</h1>
+		<h1 class="truncate text-lg font-semibold" title={data.title}>{data.title}</h1>
 
 		{#if data.available}
 			<video

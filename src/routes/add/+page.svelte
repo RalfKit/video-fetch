@@ -342,7 +342,7 @@
 									{#each $preview as row, i (i)}
 										<tr>
 											<th>{i + 1}</th>
-											<td class="max-w-xs truncate">{row.url}</td>
+											<td class="max-w-xs truncate" title={row.url}>{row.url}</td>
 											<td>{row.filename ?? '—'}</td>
 										</tr>
 									{/each}
