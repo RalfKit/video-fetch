@@ -1,7 +1,7 @@
 import { exec as execChild } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
-import { DOWNLOAD_FOLDER, TEMP_DOWNLOAD_FOLDER } from './config';
+import { DOWNLOAD_FOLDER, TEMP_DOWNLOAD_FOLDER, ENABLE_THUMBNAILS } from './config';
 import { setStatus, updateDownload } from './db';
 import type { AdvancedOptions, DownloadItem } from '$lib/types/download';
 import { downloads } from './store';
@@ -119,6 +119,9 @@ function buildYtDlpOptions(item: DownloadItem): ArgsOptions {
 
 	return {
 		...profileOptions,
+		// Never download thumbnail sidecars when thumbnails are disabled, even if a
+		// profile (e.g. "archive") requests them.
+		...(ENABLE_THUMBNAILS ? {} : { writeThumbnail: false }),
 		...(advanced.embedSubtitles ? { embedSubs: true, writeSubs: true } : {}),
 		...(advanced.retries !== undefined ? { retries: advanced.retries } : {}),
 		...(advanced.rateLimit ? { limitRate: advanced.rateLimit } : {}),
