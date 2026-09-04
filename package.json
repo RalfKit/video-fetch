@@ -53,6 +53,6 @@
 		"drizzle-kit": "^0.31.10",
 		"drizzle-orm": "^0.45.2",
 		"p-queue": "^9.1.0",
-		"ytdlp-nodejs": "^3.3.9"
+		"ytdlp-nodejs": "^3.4.5"
 	}
 }
