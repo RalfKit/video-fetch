@@ -134,7 +134,7 @@
 </svelte:head>
 
 <div class="w-full max-w-4xl px-4">
-	<div role="tablist" class="tabs-border mb-4 tabs">
+	<div role="tablist" class="tabs tabs-border mb-4">
 		<button
 			class={`tab ${active === 'single' ? 'tab-active' : ''}`}
 			onclick={() => (active = 'single')}

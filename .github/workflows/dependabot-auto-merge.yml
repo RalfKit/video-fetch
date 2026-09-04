@@ -1,18 +1,126 @@
 name: Dependabot auto-merge
 
-# Enables auto-merge for Dependabot PRs. GitHub then merges each PR only after
-# the required CI checks pass, so a single failing update stays open on its own
-# PR without blocking the others. Major updates are left for manual review.
+# 1) On Dependabot npm PRs, install the PR's lockfile and run the project's
+#    Prettier (`pnpm format`) so formatting matches the updated dependency.
+# 2) If that produces diffs, commit them back onto the Dependabot branch.
+# 3) Then enable auto-merge for non-major updates. GitHub merges only after
+#    required CI checks pass on the latest head commit.
+#
+# Security notes:
+# - Uses pull_request (not pull_request_target): untrusted PR code is never
+#   executed with base-branch secrets.
+# - GITHUB_TOKEN only; no extra PATs. Actor + branch-prefix guards keep this
+#   off feature branches and main.
+# - Commits made with GITHUB_TOKEN do not re-trigger workflows (avoids loops).
+#   After a format commit we explicitly workflow_dispatch CI on the branch so
+#   required checks run on the new SHA.
 
 on: pull_request
 
 permissions:
   contents: write
   pull-requests: write
+  actions: write
+
+concurrency:
+  group: dependabot-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
+  format:
+    if: >-
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.base_ref == 'main' &&
+      startsWith(github.head_ref, 'dependabot/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout Dependabot branch
+        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          # Default GITHUB_TOKEN can push to same-repo Dependabot branches.
+          persist-credentials: true
+
+      - name: Set up pnpm
+        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.3
+
+      - name: Set up Node.js
+        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies from PR lockfile
+        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply project Prettier (updated dependency versions)
+        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        run: pnpm format
+
+      - name: Commit formatting changes if any
+        id: commit
+        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          case "${BRANCH}" in
+            dependabot/*) ;;
+            *)
+              echo "Refusing to commit outside a Dependabot branch: ${BRANCH}"
+              exit 1
+              ;;
+          esac
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No formatting changes."
+            echo "reformatted=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          git commit -m "style: apply prettier after dependency update"
+          git push origin "HEAD:${BRANCH}"
+          echo "reformatted=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Re-run CI on reformatted commit
+        if: >-
+          steps.metadata.outputs.package-ecosystem == 'npm' &&
+          steps.commit.outputs.reformatted == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.head_ref }}
+        # GITHUB_TOKEN pushes do not create new workflow runs. Dispatch CI onto
+        # the Dependabot branch so required checks attach to the new head SHA.
+        run: gh workflow run ci.yml --ref "${BRANCH}"
+
+      - name: Skip non-npm ecosystems
+        if: steps.metadata.outputs.package-ecosystem != 'npm'
+        run: echo "Skipping format for ecosystem '${{ steps.metadata.outputs.package-ecosystem }}'."
+
   auto-merge:
-    if: github.actor == 'dependabot[bot]'
+    needs: format
+    if: >-
+      always() &&
+      github.actor == 'dependabot[bot]' &&
+      needs.format.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Fetch Dependabot metadata

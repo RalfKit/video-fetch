@@ -247,7 +247,7 @@
 										}}
 									>
 										<input type="hidden" name="id" value={subscription.id} />
-										<button class="btn btn-outline btn-sm btn-error">Delete</button>
+										<button class="btn btn-outline btn-error btn-sm">Delete</button>
 									</form>
 								</td>
 							</tr>
