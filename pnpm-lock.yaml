@@ -21,8 +21,8 @@ importers:
         specifier: ^9.1.0
         version: 9.1.0
       ytdlp-nodejs:
-        specifier: ^3.3.9
-        version: 3.3.9
+        specifier: ^3.4.5
+        version: 3.4.5
     devDependencies:
       '@eslint/compat':
         specifier: ^2.1.0
@@ -2419,8 +2419,8 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
-  ytdlp-nodejs@3.3.9:
-    resolution: {integrity: sha512-RCpjQv/rI49BvbNmQatPjU5lyer11sX+wNQyR6HEXgVdXpUOkkbj0yJHlBHqad0L/AvjWAbgJTlJTYORKBCJ9g==}
+  ytdlp-nodejs@3.4.5:
+    resolution: {integrity: sha512-KPXnW2xa553mDbrCdXPnsZTPIL7b3GJcQLskpePIoNm7uqquHjJj7ha+1r8x3dwyTQ4TATvsP6K0RDnumQr0zQ==}
     engines: {node: '>=16.0.0'}
     hasBin: true
 
@@ -4252,6 +4252,6 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  ytdlp-nodejs@3.3.9: {}
+  ytdlp-nodejs@3.4.5: {}
 
   zimmerframe@1.1.4: {}
