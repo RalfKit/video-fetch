@@ -1,3 +1,15 @@
+# [1.1.0](https://github.com/RalfKit/video-fetch/compare/v1.0.0...v1.1.0) (2026-10-01)
+
+### Bug Fixes
+
+- add engines field to specify Node.js version compatibility ([6216fd5](https://github.com/RalfKit/video-fetch/commit/6216fd511fe4d7d3852fa3ce15bbe0af25686334))
+- **downloads:** don't treat generic/unstable ids as media identity ([10944b3](https://github.com/RalfKit/video-fetch/commit/10944b3c823144a3e875818e97b576aaa1a4c80b))
+
+### Features
+
+- **thumbnails:** add ENABLE_THUMBNAILS to fully disable thumbnails ([e132c5d](https://github.com/RalfKit/video-fetch/commit/e132c5db238c6357a71313f6f4578b6108f60d33))
+- **ui:** finished downloads rename, status filter, retry, safe truncation ([7457e7f](https://github.com/RalfKit/video-fetch/commit/7457e7faa33707322a0b2eee16caf07aa72047f9))
+
 # 1.0.0 (2026-08-30)
 
 ### Bug Fixes
