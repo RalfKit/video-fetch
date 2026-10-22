@@ -1,0 +1,152 @@
+name: Dependabot format push
+
+# Applies a Prettier diff produced by "Dependabot auto-merge" and pushes it
+# onto that Dependabot branch.
+#
+# workflow_run always executes the workflow from the default branch, with
+# Actions secrets, even when Dependabot triggered the upstream workflow.
+# This job never installs the PR and never runs its Prettier. It only checks
+# the actor, checks the open PR, checks the diff with main's validator, and
+# pushes.
+#
+# Secret the repository owner must add (Settings → Secrets and variables →
+# Actions, not a Dependabot secret):
+#   DEPENDABOT_FORMAT_TOKEN
+# A fine-grained PAT for this repository only, with Contents: Read and write.
+# The account that owns the token needs permission to push to Dependabot
+# branches. A push made with GITHUB_TOKEN would not start CI or auto-merge
+# again; this PAT does. Do not put the token in the pull_request workflow —
+# that job executes the updated dependencies.
+
+on:
+  workflow_run:
+    workflows: ['Dependabot auto-merge']
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: dependabot-format-push-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  push-format:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/') &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout validator from the default branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          path: trusted
+
+      - name: Look for a formatting diff
+        id: artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
+            --jq '[.artifacts[] | select(.name=="format-patch" and .expired==false)] | length')"
+          if [ "${count}" != "0" ]; then
+            echo "present=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+            echo "No formatting diff was uploaded."
+          fi
+
+      - name: Download formatting diff
+        if: success() && steps.artifact.outputs.present == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: format-patch
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: format-patch
+
+      - name: Validate formatting diff
+        if: success() && steps.artifact.outputs.present == 'true'
+        run: node trusted/.github/scripts/validate-format-patch.mjs format-patch/format.patch
+
+      - name: Confirm the open Dependabot pull request
+        if: success() && steps.artifact.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          case "${BRANCH}" in
+            dependabot/*) ;;
+            *)
+              echo "Refusing to push outside a Dependabot branch."
+              exit 1
+              ;;
+          esac
+          gh pr list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --head "${BRANCH}" \
+            --state open \
+            --json number,author,headRefOid,baseRefName,isCrossRepository \
+            --jq 'map(select(.headRefOid == env.EXPECTED_SHA and .baseRefName == "main" and .isCrossRepository == false and (.author.login == "app/dependabot" or .author.login == "dependabot[bot]"))) | if length == 1 then .[0].number else error("Dependabot pull request at this SHA was not found.") end'
+
+      - name: Require DEPENDABOT_FORMAT_TOKEN
+        if: success() && steps.artifact.outputs.present == 'true'
+        env:
+          DEPENDABOT_FORMAT_TOKEN: ${{ secrets.DEPENDABOT_FORMAT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPENDABOT_FORMAT_TOKEN}" ]; then
+            echo "::error title=Missing DEPENDABOT_FORMAT_TOKEN::Add an Actions secret named DEPENDABOT_FORMAT_TOKEN: a fine-grained PAT for this repository with Contents read and write. Store it as an Actions secret, not a Dependabot secret. Without it, Prettier fixes cannot be pushed in a way that re-runs CI."
+            exit 1
+          fi
+
+      - name: Checkout the formatted commit
+        if: success() && steps.artifact.outputs.present == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          token: ${{ secrets.DEPENDABOT_FORMAT_TOKEN }}
+          persist-credentials: true
+          path: pr
+          fetch-depth: 1
+
+      - name: Apply the diff and push
+        if: success() && steps.artifact.outputs.present == 'true'
+        env:
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        working-directory: pr
+        run: |
+          set -euo pipefail
+          case "${BRANCH}" in
+            dependabot/*) ;;
+            *)
+              echo "Refusing to push outside a Dependabot branch."
+              exit 1
+              ;;
+          esac
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+
+          git fetch origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+          remote="$(git rev-parse "refs/remotes/origin/${BRANCH}")"
+          if [ "${remote}" != "${EXPECTED_SHA}" ]; then
+            echo "Dependabot branch moved; leaving the newer commit alone."
+            exit 0
+          fi
+
+          git -c core.hooksPath=/dev/null apply --index --whitespace=error ../format-patch/format.patch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "style: apply prettier after dependency update"
+          git -c core.hooksPath=/dev/null push origin "HEAD:refs/heads/${BRANCH}"

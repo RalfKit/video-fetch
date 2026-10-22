@@ -8,6 +8,6 @@ export default defineConfig({
 	plugins: [tailwindcss(), sveltekit(), devtoolsJson()],
 	test: {
 		environment: 'node',
-		include: ['src/**/*.{test,spec}.{js,ts}']
+		include: ['src/**/*.{test,spec}.{js,ts}', '.github/scripts/**/*.test.ts']
 	}
 });

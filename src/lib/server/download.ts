@@ -28,19 +28,21 @@ export async function startDownload(item: DownloadItem, signal?: AbortSignal): P
 		noPart: false
 	};
 
-	const result = ytdlp.download(item.videoUrl, options);
+	const download = ytdlp.download(item.videoUrl, options);
 	let finished = false;
+	let killed = false;
 
 	const onAbort = () => {
 		if (finished) return;
 
 		setImmediate(() => {
 			try {
-				if (!result.killed) {
-					if (process.platform === 'win32') {
-						execChild(`taskkill /PID ${result.pid} /T /F`, () => {});
+				if (!killed) {
+					killed = true;
+					if (process.platform === 'win32' && download.pid !== undefined) {
+						execChild(`taskkill /PID ${download.pid} /T /F`, () => {});
 					} else {
-						result.kill('SIGKILL');
+						download.kill('SIGKILL');
 					}
 				}
 			} catch (err) {
@@ -49,38 +51,41 @@ export async function startDownload(item: DownloadItem, signal?: AbortSignal): P
 		});
 	};
 
-	const cleanup = () => {
-		try {
-			result.stderr?.removeAllListeners('data');
-			result.removeAllListeners('progress');
-			result.removeAllListeners('close');
-			signal?.removeEventListener('abort', onAbort);
-		} catch {
-			/* ignore */
-		}
-	};
-
-	result.stderr?.on('data', (data) => {
-		const msg = data.toString().trim();
+	download.on('stderr', (data) => {
+		const msg = data.trim();
 		if (msg) {
 			stderrBuffer.push(msg);
 			console.error('[yt-dlp]', msg);
 		}
 	});
 
-	result.on('progress', (progress: VideoProgress) => {
+	download.on('progress', (progress: VideoProgress) => {
 		downloads.update((items) => items.map((d) => (d.id === item.id ? { ...d, progress } : d)));
 	});
 
+	if (signal?.aborted) {
+		await setStatus(item.id, 'cancelled', 'Cancelled by user');
+		return;
+	}
+	signal?.addEventListener('abort', onAbort, { once: true });
+
 	return await new Promise<void>((resolve) => {
-		result.on('close', async (code, closeSignal) => {
-			if (finished) return;
+		const settle = () => {
+			signal?.removeEventListener('abort', onAbort);
+			resolve();
+		};
+
+		const markFinished = () => {
+			if (finished) return false;
 			finished = true;
+			return true;
+		};
 
-			const ok = code === 0 && closeSignal === null;
-			const errorMsg = stderrBuffer.filter((v) => v.startsWith('ERROR')).join('\n') || undefined;
-
-			if (ok) {
+		// ytdlp-nodejs 3.4 returns a builder. run() starts the process and
+		// emits finish on success. A non-zero exit emits error and rejects.
+		download.on('finish', () => {
+			if (!markFinished()) return;
+			void (async () => {
 				try {
 					const finalFile = await moveCompletedFile(outputBase, targetFolder);
 					await updateDownload(item.id, {
@@ -90,24 +95,30 @@ export async function startDownload(item: DownloadItem, signal?: AbortSignal): P
 				} catch (err) {
 					await setStatus(item.id, 'failed', (err as Error).message);
 				}
-			} else if (signal?.aborted) {
-				await setStatus(item.id, 'cancelled', 'Cancelled by user');
-			} else {
-				await setStatus(item.id, 'failed', errorMsg);
-			}
-
-			cleanup();
-			resolve();
+				settle();
+			})();
 		});
 
-		if (signal) {
-			if (signal.aborted) {
-				onAbort();
-				cleanup();
-				resolve();
-				return;
-			}
-			signal.addEventListener('abort', onAbort, { once: true });
+		const fail = () => {
+			if (!markFinished()) return;
+			void (async () => {
+				if (signal?.aborted || killed) {
+					await setStatus(item.id, 'cancelled', 'Cancelled by user');
+				} else {
+					const errorMsg =
+						stderrBuffer.filter((v) => v.startsWith('ERROR')).join('\n') || undefined;
+					await setStatus(item.id, 'failed', errorMsg);
+				}
+				settle();
+			})();
+		};
+
+		download.on('error', fail);
+		const running = download.run();
+		running.catch(fail);
+		if (signal?.aborted) {
+			killed = true;
+			download.kill('SIGKILL');
 		}
 	});
 }
