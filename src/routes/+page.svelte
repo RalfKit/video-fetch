@@ -88,10 +88,12 @@
 	function formatInfo(d: DownloadUpdate) {
 		if (!d.progress) return d.folder ? `Folder: ${d.folder}` : 'No info';
 
-		const parts: string[] = [d.progress.percentage_str, d.progress.total_str, d.progress.speed_str];
-		if (d.progress.eta) parts.push(`ETA ${d.progress.eta_str}`);
-		parts.push(d.progress.downloaded_str);
-		return parts.join(' · ');
+		const parts = [d.progress.percentage_str, d.progress.total_str, d.progress.speed_str].filter(
+			(part): part is string => Boolean(part)
+		);
+		if (d.progress.eta && d.progress.eta_str) parts.push(`ETA ${d.progress.eta_str}`);
+		if (d.progress.downloaded_str) parts.push(d.progress.downloaded_str);
+		return parts.length > 0 ? parts.join(' · ') : 'No info';
 	}
 
 	function matchesStatusFilter(d: DownloadUpdate) {
