@@ -34,6 +34,8 @@ jobs:
   release:
     name: Semantic release & Docker publish
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -94,6 +96,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
+        id: publish
         if: hashFiles('release-version.txt') != ''
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -114,3 +117,15 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             "${tags[@]}" \
             .
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  # Same README sync as .github/workflows/dockerhub-description.yml, but only
+  # after an image push. A release with nothing to publish skips this.
+  dockerhub-description:
+    name: Docker Hub overview
+    needs: release
+    if: needs.release.result == 'success' && needs.release.outputs.published == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/dockerhub-description.yml
+    secrets: inherit
