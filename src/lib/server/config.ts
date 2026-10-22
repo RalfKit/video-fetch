@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { env as private_env } from '$env/dynamic/private';
+import { parseInactivityTimeoutMs } from './inactivity-timeout';
 
 // Pfad entweder aus ENV oder Default './downloads'
 export const DOWNLOAD_FOLDER = private_env.DOWNLOAD_PATH
@@ -30,6 +31,17 @@ export const DELETE_FILE_ON_DELETE = /^(1|true|yes|on)$/i.test(
 export const ENABLE_THUMBNAILS = !/^(0|false|no|off)$/i.test(
 	(private_env.ENABLE_THUMBNAILS ?? '').trim()
 );
+
+/**
+ * Silence window for a yt-dlp process, in milliseconds.
+ * `0` disables the watchdog. Read on each download so tests and env changes apply.
+ */
+export function downloadInactivityTimeoutMs(): number {
+	return parseInactivityTimeoutMs(private_env.DOWNLOAD_INACTIVITY_TIMEOUT);
+}
+
+// Refuse to boot when the variable is set to something that is not a duration.
+downloadInactivityTimeoutMs();
 
 // Stelle sicher, dass der Ordner existiert
 if (!fs.existsSync(DOWNLOAD_FOLDER)) {

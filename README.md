@@ -105,6 +105,18 @@ Controls whether thumbnails are used.
 ENABLE_THUMBNAILS=false
 ```
 
+### `DOWNLOAD_INACTIVITY_TIMEOUT`
+
+Seconds of silence before a download is stopped. Silence means no progress event and no stdout or stderr from yt-dlp. That covers a process that stalls mid-download and one that never starts.
+
+- Default: `300` (5 minutes). Output resets the timer, so a slow transfer that is still printing progress is left alone. Merging and post-processing can be quiet; do not set this lower than the longest quiet step you expect.
+- `0` (or `off`) disables the watchdog.
+- The job is marked `failed` with an error that names this variable. The live SSE stream then drops it the same way it drops any other failed job, after a short final update.
+
+```env
+DOWNLOAD_INACTIVITY_TIMEOUT=300
+```
+
 ### `YTDLP_PATH` / `FFMPEG_PATH`
 
 Optional explicit paths to the `yt-dlp` and `ffmpeg` binaries.
@@ -197,6 +209,7 @@ Images are published to `blacktiger001/videofetch` (the `DOCKERHUB_USERNAME` con
 docker run -d \
   --name videofetch \
   -p 3000:3000 \
+  -e DOWNLOAD_INACTIVITY_TIMEOUT=300 \
   -v /absolute/path/to/downloads:/downloads \
   -v /absolute/path/to/data:/data \
   blacktiger001/videofetch:latest
@@ -212,6 +225,8 @@ services:
     restart: unless-stopped
     ports:
       - '3000:3000'
+    environment:
+      DOWNLOAD_INACTIVITY_TIMEOUT: '300'
     volumes:
       - ./downloads:/downloads
       - ./data:/data
@@ -238,13 +253,14 @@ pnpm build        # production build (adapter-node)
 
 - **CI** (`.github/workflows/ci.yml`) runs on every pull request and on pushes to `main`: format/lint, type check, unit tests, plus a Docker image build with a startup/health smoke test.
 - **Dependency updates** are handled by Dependabot (`.github/dependabot.yml`) on a monthly schedule. Application dependencies are opened as individual PRs so a single failing update never blocks the others; security updates are opened independently and can be released early. Pull requests from `dependabot[bot]` are formatted automatically when Prettier reports a diff (`.github/workflows/dependabot-auto-merge.yml` and `.github/workflows/dependabot-format-push.yml`). Human pull requests are not. Auto-merge is enabled only for semver patch and minor updates, and GitHub merges them only after CI passes. Major updates stay open for review.
-- **Releases** (`.github/workflows/release.yml`) are **not** cut on every merge. They run on a monthly schedule (and can be triggered manually via _workflow_dispatch_ for early/security releases), so several successful changes are collected into one release. [semantic-release](https://semantic-release.gitbook.io/) derives the version from [Conventional Commits](https://www.conventionalcommits.org/), updates `CHANGELOG.md` and `package.json`, creates the Git tag + GitHub release, and builds and pushes the versioned Docker image.
+- **Releases** (`.github/workflows/release.yml`) are **not** cut on every merge. They run on a monthly schedule (and can be triggered manually via _workflow_dispatch_ for early/security releases), so several successful changes are collected into one release. [semantic-release](https://semantic-release.gitbook.io/) derives the version from [Conventional Commits](https://www.conventionalcommits.org/) and creates the Git tag and GitHub Release. Release notes live on that GitHub Release. `CHANGELOG.md` stops at 1.1.0, and `package.json` is not bumped (the package is private and is not published to npm). The Docker image is built and pushed only after the tag and GitHub Release succeed, tagged with the version and `latest`. The version is also stored in the image label `org.opencontainers.image.version`.
 
 ### Required repository configuration
 
 - Secrets: `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Docker Hub publish). `DEPENDABOT_FORMAT_TOKEN` so a formatted Dependabot commit can re-trigger CI: a fine-grained personal access token for this repository only, with **Contents: Read and write**. Store it as an Actions secret. Do not store it as a Dependabot secret — the job that installs the pull request's dependencies must not be able to read it, and Dependabot secrets are not available to the `workflow_run` job that pushes.
 - Enable **Allow auto-merge** in the repository settings and protect `main` with the **CI** checks required, so `main` is only updated through green CI and Dependabot auto-merge works as intended.
-- The release job pushes a version commit and tag to `main`. If `main` is protected, allow the Actions bot to bypass the protection (or provide a `GH_TOKEN` PAT with push access) so `semantic-release` can publish.
+- The release job pushes a git tag and does not commit to `main`. The ruleset on `main` requires the CI checks, which is why a release commit cannot be pushed with `GITHUB_TOKEN`. Tags are not covered by that ruleset. No bypass token is required.
+- If the GitHub Release exists but the Docker push step failed, run the workflow again and set **image_version** to that version (for example `1.1.1`). That republishes the image for the existing tag and does not create another release. `latest` is moved only when that version is the highest git tag.
 
 ## 📦 Stack
 

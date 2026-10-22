@@ -1,9 +1,8 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { downloads } from '$lib/server/store';
+import { isLiveDownloadUpdate } from '$lib/server/active-downloads';
 import { get } from 'svelte/store';
 import type { DownloadUpdate } from '$lib/types/download';
-
-const TWO_SECONDS = 2000;
 
 export const GET: RequestHandler = ({ request }) => {
 	let closed = false;
@@ -15,16 +14,9 @@ export const GET: RequestHandler = ({ request }) => {
 
 				const now = Date.now();
 
-				// Filter: aktive Downloads + gerade fertiggestellte innerhalb der letzten 2 Sekunden
+				// Active jobs, plus ones that finished in the last couple of seconds.
 				const activeDownloads: DownloadUpdate[] = get(downloads)
-					.filter(
-						(d) =>
-							d.status === 'downloading' ||
-							d.status === 'pending' ||
-							d.status === 'metadata_fetching' ||
-							d.status === 'queued' ||
-							(d.finishedAt && now - d.finishedAt.getTime() < TWO_SECONDS)
-					)
+					.filter((d) => isLiveDownloadUpdate(d, now))
 					.map((d) => ({
 						id: d.id,
 						videoUrl: d.videoUrl,
