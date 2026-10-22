@@ -27,3 +27,6 @@ vite.config.ts.timestamp-*
 
 # SQLite
 *.db
+
+# Written by semantic-release after a successful release. The Docker job reads it.
+release-version.txt
