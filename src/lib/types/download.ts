@@ -2,13 +2,7 @@ import type { Download } from '$lib/server/db/schema';
 import type { VideoProgress } from 'ytdlp-nodejs';
 
 export type DownloadStatus =
-	| 'pending'
-	| 'metadata_fetching'
-	| 'queued'
-	| 'downloading'
-	| 'completed'
-	| 'failed'
-	| 'cancelled';
+	'pending' | 'metadata_fetching' | 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled';
 
 export interface DownloadItem extends Download {
 	progress: VideoProgress | null;
@@ -30,13 +24,7 @@ export interface DownloadUpdate {
 }
 
 export type DownloadQuality =
-	| 'highest'
-	| 'lowest'
-	| 'best'
-	| '1080p_mp4'
-	| 'audio_only'
-	| 'archive'
-	| 'mobile';
+	'highest' | 'lowest' | 'best' | '1080p_mp4' | 'audio_only' | 'archive' | 'mobile';
 
 export type DownloadSource = 'manual' | 'api' | 'subscription' | 'extension';
 
