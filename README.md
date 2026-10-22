@@ -237,12 +237,12 @@ pnpm build        # production build (adapter-node)
 ## 🔁 CI/CD
 
 - **CI** (`.github/workflows/ci.yml`) runs on every pull request and on pushes to `main`: format/lint, type check, unit tests, plus a Docker image build with a startup/health smoke test.
-- **Dependency updates** are handled by Dependabot (`.github/dependabot.yml`) on a monthly schedule. Application dependencies are opened as individual PRs so a single failing update never blocks the others; security updates are opened independently and can be released early. Non-major update PRs are auto-merged once CI passes (`.github/workflows/dependabot-auto-merge.yml`).
+- **Dependency updates** are handled by Dependabot (`.github/dependabot.yml`) on a monthly schedule. Application dependencies are opened as individual PRs so a single failing update never blocks the others; security updates are opened independently and can be released early. Pull requests from `dependabot[bot]` are formatted automatically when Prettier reports a diff (`.github/workflows/dependabot-auto-merge.yml` and `.github/workflows/dependabot-format-push.yml`). Human pull requests are not. Auto-merge is enabled only for semver patch and minor updates, and GitHub merges them only after CI passes. Major updates stay open for review.
 - **Releases** (`.github/workflows/release.yml`) are **not** cut on every merge. They run on a monthly schedule (and can be triggered manually via _workflow_dispatch_ for early/security releases), so several successful changes are collected into one release. [semantic-release](https://semantic-release.gitbook.io/) derives the version from [Conventional Commits](https://www.conventionalcommits.org/), updates `CHANGELOG.md` and `package.json`, creates the Git tag + GitHub release, and builds and pushes the versioned Docker image.
 
 ### Required repository configuration
 
-- Secrets: `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Docker Hub publish).
+- Secrets: `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Docker Hub publish). `DEPENDABOT_FORMAT_TOKEN` so a formatted Dependabot commit can re-trigger CI: a fine-grained personal access token for this repository only, with **Contents: Read and write**. Store it as an Actions secret. Do not store it as a Dependabot secret — the job that installs the pull request's dependencies must not be able to read it, and Dependabot secrets are not available to the `workflow_run` job that pushes.
 - Enable **Allow auto-merge** in the repository settings and protect `main` with the **CI** checks required, so `main` is only updated through green CI and Dependabot auto-merge works as intended.
 - The release job pushes a version commit and tag to `main`. If `main` is protected, allow the Actions bot to bypass the protection (or provide a `GH_TOKEN` PAT with push access) so `semantic-release` can publish.
 

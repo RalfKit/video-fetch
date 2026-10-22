@@ -1,26 +1,24 @@
 name: Dependabot auto-merge
 
-# 1) On Dependabot npm PRs, install the PR's lockfile and run the project's
-#    Prettier (`pnpm format`) so formatting matches the updated dependency.
-# 2) If that produces diffs, commit them back onto the Dependabot branch.
-# 3) Then enable auto-merge for non-major updates. GitHub merges only after
-#    required CI checks pass on the latest head commit.
+# Dependabot PRs (dependabot[bot] only):
+# 1. Run the project's Prettier on the PR head. Human PRs are not formatted.
+# 2. If that produces a diff, upload it. A separate workflow_run job (see
+#    dependabot-format-push.yml) applies it and pushes with a PAT, because a
+#    GITHUB_TOKEN push does not start new workflow runs and CI would stay stale.
+# 3. Enable auto-merge for semver patch and minor updates only. Major bumps
+#    stay open for review. GitHub merges only after required CI checks pass.
 #
-# Security notes:
-# - Uses pull_request (not pull_request_target): untrusted PR code is never
-#   executed with base-branch secrets.
-# - GITHUB_TOKEN only; no extra PATs. Actor + branch-prefix guards keep this
-#   off feature branches and main.
-# - Commits made with GITHUB_TOKEN do not re-trigger workflows (avoids loops).
-#   After a format commit we explicitly workflow_dispatch CI on the branch so
-#   required checks run on the new SHA.
+# The job that executes the PR's dependencies has contents: read and no
+# repository secrets. Prettier from the updated lockfile therefore cannot push
+# or read DEPENDABOT_FORMAT_TOKEN. The patch is validated again, from main's
+# copy of the script, before anything is pushed.
 
-on: pull_request
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+  contents: read
 
 concurrency:
   group: dependabot-pr-${{ github.event.pull_request.number }}
@@ -35,93 +33,100 @@ jobs:
       startsWith(github.head_ref, 'dependabot/')
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout Dependabot branch
-        if: steps.metadata.outputs.package-ecosystem == 'npm'
+      - name: Checkout Dependabot head
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.head_ref }}
-          # Default GITHUB_TOKEN can push to same-repo Dependabot branches.
-          persist-credentials: true
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Skip when this commit is already a format commit
+        id: guard
+        run: |
+          set -euo pipefail
+          message="$(git log -1 --format=%s)"
+          if [ "${message}" = "style: apply prettier after dependency update" ]; then
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "skip=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      # The PR head does not contain this script until it is rebased. Load
+      # main's copy so a newly merged validator cannot be replaced by the PR.
+      - name: Download patch validator from main
+        if: success() && steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H "Accept: application/vnd.github.raw" \
+            "/repos/${GITHUB_REPOSITORY}/contents/.github/scripts/validate-format-patch.mjs?ref=main" \
+            > "${RUNNER_TEMP}/validate-format-patch.mjs"
 
       - name: Set up pnpm
-        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        if: success() && steps.guard.outputs.skip != 'true'
         uses: pnpm/action-setup@v6
         with:
           version: 10.33.3
 
       - name: Set up Node.js
-        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        if: success() && steps.guard.outputs.skip != 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
 
-      - name: Install dependencies from PR lockfile
-        if: steps.metadata.outputs.package-ecosystem == 'npm'
+      - name: Install dependencies from the PR lockfile
+        if: success() && steps.guard.outputs.skip != 'true'
         run: pnpm install --frozen-lockfile
-
-      - name: Apply project Prettier (updated dependency versions)
-        if: steps.metadata.outputs.package-ecosystem == 'npm'
-        run: pnpm format
-
-      - name: Commit formatting changes if any
-        id: commit
-        if: steps.metadata.outputs.package-ecosystem == 'npm'
         env:
-          BRANCH: ${{ github.head_ref }}
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+
+      - name: Apply project Prettier
+        if: success() && steps.guard.outputs.skip != 'true'
+        run: pnpm exec prettier --write .
+        env:
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+
+      - name: Collect formatting diff
+        id: patch
+        if: success() && steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
-
-          case "${BRANCH}" in
-            dependabot/*) ;;
-            *)
-              echo "Refusing to commit outside a Dependabot branch: ${BRANCH}"
-              exit 1
-              ;;
-          esac
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A
-          if git diff --staged --quiet; then
+          if git diff --quiet; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
             echo "No formatting changes."
-            echo "reformatted=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
+          git -c core.hooksPath=/dev/null diff --no-ext-diff --no-textconv \
+            > "${RUNNER_TEMP}/format.patch"
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
 
-          git commit -m "style: apply prettier after dependency update"
-          git push origin "HEAD:${BRANCH}"
-          echo "reformatted=true" >> "${GITHUB_OUTPUT}"
+      - name: Validate formatting diff
+        if: success() && steps.guard.outputs.skip != 'true' && steps.patch.outputs.changed == 'true'
+        run: node "${RUNNER_TEMP}/validate-format-patch.mjs" "${RUNNER_TEMP}/format.patch"
 
-      - name: Re-run CI on reformatted commit
-        if: >-
-          steps.metadata.outputs.package-ecosystem == 'npm' &&
-          steps.commit.outputs.reformatted == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.head_ref }}
-        # GITHUB_TOKEN pushes do not create new workflow runs. Dispatch CI onto
-        # the Dependabot branch so required checks attach to the new head SHA.
-        run: gh workflow run ci.yml --ref "${BRANCH}"
-
-      - name: Skip non-npm ecosystems
-        if: steps.metadata.outputs.package-ecosystem != 'npm'
-        run: echo "Skipping format for ecosystem '${{ steps.metadata.outputs.package-ecosystem }}'."
+      - name: Upload formatting diff
+        if: success() && steps.guard.outputs.skip != 'true' && steps.patch.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: format-patch
+          path: ${{ runner.temp }}/format.patch
+          retention-days: 1
+          if-no-files-found: error
+          overwrite: true
 
   auto-merge:
     needs: format
     if: >-
-      always() &&
       github.actor == 'dependabot[bot]' &&
       needs.format.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
@@ -129,9 +134,18 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enable auto-merge for non-major updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr merge --auto --squash "$PR_URL"
+      - name: Enable auto-merge for patch and minor updates
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_URL"
+
+      - name: Leave other updates for review
+        if: >-
+          steps.metadata.outputs.update-type != 'version-update:semver-patch' &&
+          steps.metadata.outputs.update-type != 'version-update:semver-minor'
+        run: |
+          echo "Not enabling auto-merge for ${{ steps.metadata.outputs.dependency-names }} (${{ steps.metadata.outputs.update-type }})."
