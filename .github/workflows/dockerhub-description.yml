@@ -1,0 +1,48 @@
+name: Docker Hub description
+
+# Copy README.md to the Docker Hub repository overview for the published image.
+# Pull requests and Dependabot do not run this. It runs when README.md changes
+# on main, when someone starts it by hand, and when the Release workflow calls
+# it after an image was actually pushed.
+on:
+  workflow_call:
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - .github/workflows/dockerhub-description.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dockerhub-description
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update Docker Hub overview
+    if: github.event_name != 'push' || github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Full description limit is 25,000 bytes; short description is 100 bytes.
+      # The action truncates and warns instead of failing the request.
+      # enable-url-completion rewrites relative links (including #anchors) to
+      # absolute GitHub URLs. This README has no images.
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/videofetch
+          short-description: ${{ github.event.repository.description || 'A lightweight video download service with a SvelteKit-based web interface.' }}
+          enable-url-completion: true

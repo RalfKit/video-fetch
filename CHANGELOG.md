@@ -1,3 +1,7 @@
+> Historical through 1.1.0. Later releases do not update this file.
+> Release notes are published only on the [GitHub Releases](https://github.com/RalfKit/video-fetch/releases) page.
+> The version is the git tag and the Docker image tag.
+
 # [1.1.0](https://github.com/RalfKit/video-fetch/compare/v1.0.0...v1.1.0) (2026-10-01)
 
 ### Bug Fixes

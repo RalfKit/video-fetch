@@ -3,17 +3,28 @@ name: Release
 # Releases are intentionally NOT triggered on every merge. They run on a monthly
 # schedule so several successful changes are collected into a single release, and
 # can also be triggered manually (e.g. to ship a security update early).
+#
+# semantic-release creates the git tag and the GitHub Release. It does not commit
+# to main: the ruleset on the default branch requires the CI status checks, so a
+# chore(release) commit cannot be pushed with GITHUB_TOKEN. There is no tag
+# ruleset. The tag is published with `git push --tags`, which does not move main.
+#
+# The Docker image is pushed only after that tag and GitHub Release succeed.
+# A failed release therefore does not publish an image.
 on:
   schedule:
     # Monthly, on the 15th at 04:00 UTC — a couple of weeks after the monthly
     # Dependabot window, giving dependency PRs time to merge and settle.
     - cron: '0 4 15 * *'
   workflow_dispatch:
+    inputs:
+      image_version:
+        description: 'Republish the Docker image for an existing release (for example 1.1.1). Leave empty to cut a normal release.'
+        required: false
+        type: string
 
 permissions:
   contents: write
-  issues: write
-  pull-requests: write
 
 concurrency:
   group: release
@@ -23,6 +34,8 @@ jobs:
   release:
     name: Semantic release & Docker publish
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -31,36 +44,88 @@ jobs:
           persist-credentials: true
 
       - name: Set up pnpm
+        if: github.event_name != 'workflow_dispatch' || inputs.image_version == ''
         uses: pnpm/action-setup@v6
         with:
           version: 10.33.3
 
       - name: Set up Node.js
+        if: github.event_name != 'workflow_dispatch' || inputs.image_version == ''
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
 
       - name: Install dependencies
+        if: github.event_name != 'workflow_dispatch' || inputs.image_version == ''
         run: pnpm install --frozen-lockfile
 
+      - name: Semantic release
+        if: github.event_name != 'workflow_dispatch' || inputs.image_version == ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          npx --yes
+          -p semantic-release@24
+          -p @semantic-release/exec@6
+          semantic-release
+
+      - name: Record version to republish
+        if: github.event_name == 'workflow_dispatch' && inputs.image_version != ''
+        env:
+          IMAGE_VERSION: ${{ inputs.image_version }}
+        run: |
+          set -euo pipefail
+          version="${IMAGE_VERSION#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "image_version must look like 1.2.3" >&2
+            exit 1
+          fi
+          git rev-parse --verify "refs/tags/v${version}^{commit}" >/dev/null
+          printf '%s\n' "$version" > release-version.txt
+
       - name: Set up Docker Buildx
+        if: hashFiles('release-version.txt') != ''
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to Docker Hub
+        if: hashFiles('release-version.txt') != ''
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Semantic release (version, changelog, Docker image, GitHub release)
+      - name: Build and push Docker image
+        id: publish
+        if: hashFiles('release-version.txt') != ''
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        run: >-
-          npx --yes
-          -p semantic-release@24
-          -p @semantic-release/changelog@6
-          -p @semantic-release/git@10
-          -p @semantic-release/exec@6
-          semantic-release
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < release-version.txt)
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "refusing to tag an unexpected version: $version" >&2
+            exit 1
+          fi
+          tags=(-t "$DOCKERHUB_USERNAME/videofetch:$version")
+          latest=$(git tag -l 'v*' --sort=-v:refname | head -n 1)
+          if [ "$latest" = "v$version" ]; then
+            tags+=(-t "$DOCKERHUB_USERNAME/videofetch:latest")
+          fi
+          docker buildx build --push \
+            --label "org.opencontainers.image.version=$version" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            "${tags[@]}" \
+            .
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  # Same README sync as .github/workflows/dockerhub-description.yml, but only
+  # after an image push. A release with nothing to publish skips this.
+  dockerhub-description:
+    name: Docker Hub overview
+    needs: release
+    if: needs.release.result == 'success' && needs.release.outputs.published == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/dockerhub-description.yml
+    secrets: inherit
