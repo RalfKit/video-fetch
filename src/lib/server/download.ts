@@ -1,12 +1,8 @@
 import { exec as execChild } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
-import {
-	DOWNLOAD_FOLDER,
-	TEMP_DOWNLOAD_FOLDER,
-	ENABLE_THUMBNAILS,
-	downloadInactivityTimeoutMs
-} from './config';
+import { DOWNLOAD_FOLDER, TEMP_DOWNLOAD_FOLDER, ENABLE_THUMBNAILS } from './config';
+import * as downloadConfig from './config';
 import { setStatus, updateDownload } from './db';
 import type { AdvancedOptions, DownloadItem } from '$lib/types/download';
 import { downloads } from './store';
@@ -34,15 +30,19 @@ function stopChild(download: Stoppable) {
 	}
 }
 
-/**
- * Timeout for this download. A config mock that does not export the helper
- * (older tests) keeps the default window instead of disabling the watchdog.
- */
 function resolveInactivityTimeoutMs(): number {
-	if (typeof downloadInactivityTimeoutMs !== 'function') {
+	// Vitest throws if a config mock does not export this helper. Older tests
+	// mock the rest of the module, so a missing helper keeps the default window.
+	let read: unknown;
+	try {
+		read = downloadConfig.downloadInactivityTimeoutMs;
+	} catch {
+		read = undefined;
+	}
+	if (typeof read !== 'function') {
 		return DEFAULT_DOWNLOAD_INACTIVITY_TIMEOUT_MS;
 	}
-	const value = downloadInactivityTimeoutMs();
+	const value = read();
 	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
 		return DEFAULT_DOWNLOAD_INACTIVITY_TIMEOUT_MS;
 	}
