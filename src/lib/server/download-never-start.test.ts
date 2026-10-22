@@ -73,6 +73,8 @@ function item(): DownloadItem {
 		filePath: null,
 		metadataJson: null,
 		advancedOptionsJson: null,
+		canonicalUrl: null,
+		mediaKey: null,
 		createdAt: now,
 		updatedAt: now,
 		finishedAt: null,

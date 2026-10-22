@@ -15,8 +15,9 @@
  * fragment; otherwise different videos are falsely detected as duplicates and
  * cancelled with "Already downloaded or queued".
  *
- * Exact same-URL re-adds are still prevented independently by the unique
- * `video_url` index, so being conservative here only risks an occasional real
+ * Exact and normalized URL re-adds are prevented by the unique `video_url` and
+ * `canonical_url` indexes. A reliable extractor id is stored separately in
+ * `media_key`. Being conservative for `generic` only risks an occasional real
  * re-download (safe) instead of wrongly cancelling a different video (unsafe).
  */
 

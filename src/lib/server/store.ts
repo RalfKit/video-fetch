@@ -61,6 +61,11 @@ export async function initializeServer() {
 		})
 		.where(inArray(downloadsSchema.status, ['downloading', 'queued', 'metadata_fetching']));
 
+	// One preferred row per video receives the dedupe key. Existing duplicate
+	// rows are left in place (their key stays NULL) so user data is not deleted.
+	const { backfillDuplicateKeys } = await import('./db');
+	backfillDuplicateKeys();
+
 	// Aktuellen Stand aus der DB laden.
 	const items = await db.select().from(downloadsSchema);
 	downloads.set(

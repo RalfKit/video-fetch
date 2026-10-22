@@ -1,9 +1,21 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { writable } from 'svelte/store';
+	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
+	let submitting = $state(false);
+
+	function trackSubmit() {
+		submitting = true;
+		return async ({ update }: { update: () => Promise<void> }) => {
+			try {
+				await update();
+			} finally {
+				submitting = false;
+			}
+		};
+	}
 
 	// Tab state
 	let active: 'single' | 'batch' = $state('single');
@@ -12,7 +24,7 @@
 	let importText = $state('');
 	let fileInput: HTMLInputElement | null = $state(null);
 
-	const preview = writable([] as { url: string; filename: string | null }[]);
+	let preview = $state([] as { url: string; filename: string | null }[]);
 	let batchError: string | null = $state(null);
 	let refreshedFolders = $state<string[] | null>(null);
 	let folders = $derived(refreshedFolders ?? data.folders ?? []);
@@ -39,7 +51,7 @@
 			});
 		}
 
-		preview.set(rows);
+		preview = rows;
 	}
 
 	/* -----------------------------
@@ -79,7 +91,7 @@
 		if (validateTSV(importText)) {
 			parseTSV(importText);
 		} else {
-			preview.set([]);
+			preview = [];
 		}
 	}
 
@@ -111,7 +123,7 @@
 		const f = input.files?.[0];
 
 		if (!f) {
-			preview.set([]);
+			preview = [];
 			return;
 		}
 
@@ -154,7 +166,7 @@
 			method="POST"
 			action="?/addUrl"
 			class="mb-6 rounded-lg bg-base-100 p-6 shadow-lg"
-			use:enhance
+			use:enhance={trackSubmit}
 		>
 			<div class="grid gap-4">
 				<label class="flex flex-col">
@@ -254,7 +266,9 @@
 					</div>
 				{/if}
 
-				<button class="btn w-full btn-primary" type="submit">Add</button>
+				<button class="btn w-full btn-primary" type="submit" disabled={submitting}>
+					{submitting ? 'Adding…' : 'Add'}
+				</button>
 			</div>
 		</form>
 	{/if}
@@ -265,7 +279,7 @@
 			action="?/importBatch"
 			enctype="multipart/form-data"
 			class="rounded-lg bg-base-100 p-6 shadow-lg"
-			use:enhance
+			use:enhance={trackSubmit}
 		>
 			<div class="grid gap-4">
 				<div>
@@ -327,7 +341,7 @@
 				<div>
 					<p class="font-medium">Preview</p>
 					<div class="mt-2 max-h-56 overflow-auto rounded border p-2">
-						{#if $preview.length === 0}
+						{#if preview.length === 0}
 							<p class="text-sm text-gray-500">No valid entries.</p>
 						{:else}
 							<table class="table w-full">
@@ -339,7 +353,7 @@
 									</tr>
 								</thead>
 								<tbody>
-									{#each $preview as row, i (i)}
+									{#each preview as row, i (i)}
 										<tr>
 											<th>{i + 1}</th>
 											<td class="max-w-xs truncate" title={row.url}>{row.url}</td>
@@ -352,13 +366,27 @@
 					</div>
 				</div>
 
-				<button class="btn w-full btn-primary" type="submit" disabled={!!batchError}>
-					Import ({$preview.length})
+				<button class="btn w-full btn-primary" type="submit" disabled={!!batchError || submitting}>
+					{submitting ? 'Importing…' : `Import (${preview.length})`}
 				</button>
 			</div>
 		</form>
 	{/if}
 	{#if form?.error}
-		<p class="w-full border border-error bg-error-content p-6 text-error">{form.error}</p>
+		<div class="mt-4 w-full border border-error bg-error-content p-6 text-error">
+			<p class="whitespace-pre-wrap">{form.error}</p>
+			{#if form.duplicates?.length}
+				<ul class="mt-3 grid gap-1">
+					{#each form.duplicates as duplicate (duplicate.id)}
+						<li>
+							<a class="link font-medium" href={resolve('/video/[id]', { id: duplicate.id })}>
+								{duplicate.label}
+							</a>
+							<span> ({duplicate.status})</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
 	{/if}
 </div>

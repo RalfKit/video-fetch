@@ -22,6 +22,13 @@
       "when": 1778413200000,
       "tag": "0002_subscription_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1778420000000,
+      "tag": "0003_download_dedupe",
+      "breakpoints": true
     }
   ]
 }

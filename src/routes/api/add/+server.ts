@@ -1,5 +1,6 @@
 import { prepareDownloadItems, ValidationError } from '$lib/server/downloads-helper';
 import { addDownloads } from '$lib/server/db';
+import { duplicateErrorBody } from '$lib/server/duplicate-guard';
 import { processDownloads } from '$lib/server/process';
 import type { RequestHandler } from './$types';
 
@@ -8,11 +9,24 @@ export const POST: RequestHandler = async ({ request }) => {
 		const data = await request.json();
 
 		const items = await prepareDownloadItems(data, 'api');
-		const inserted = await addDownloads(items);
-		void processDownloads();
+		const outcome = await addDownloads(items);
+		const added = outcome.queued.length + outcome.retried.length;
+		if (added > 0) void processDownloads();
+
+		const duplicateBody = duplicateErrorBody(outcome.duplicates);
+		if (outcome.duplicates.length > 0 && added === 0) {
+			return new Response(JSON.stringify(duplicateBody), { status: 409 });
+		}
 
 		return new Response(
-			JSON.stringify({ message: 'Downloads added to queue', queued: inserted.length }),
+			JSON.stringify({
+				message:
+					duplicateBody.duplicates.length > 0 ? duplicateBody.error : 'Downloads added to queue',
+				queued: added,
+				inserted: outcome.queued.length,
+				retried: outcome.retried.length,
+				duplicates: duplicateBody.duplicates
+			}),
 			{ status: 202 }
 		);
 	} catch (err) {
