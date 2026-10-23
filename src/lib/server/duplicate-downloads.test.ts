@@ -53,11 +53,13 @@ CREATE TABLE downloads (
 	updated_at integer NOT NULL,
 	finished_at integer,
 	canonical_url text,
-	media_key text
+	media_key text,
+	filename_key text
 );
 CREATE UNIQUE INDEX uq_downloads_video_url ON downloads (video_url);
 CREATE UNIQUE INDEX uq_downloads_canonical_url ON downloads (canonical_url);
 CREATE UNIQUE INDEX uq_downloads_media_key ON downloads (media_key);
+CREATE UNIQUE INDEX uq_downloads_filename_key ON downloads (filename_key);
 `;
 
 type DbApi = {
@@ -259,6 +261,151 @@ describe('addDownloads duplicate guard', () => {
 		expect(keyed.map((row) => row.id)).toEqual(['with-file']);
 		expect(rows.find((row) => row.id === 'extra-copy')?.canonicalUrl).toBeNull();
 	});
+
+	const hlsPath =
+		'https://cdn.example.test/engine/hls2-c/01/18138/episode_,h,n,l,.urlset/master.m3u8';
+	const hlsA = `${hlsPath}?t=fakeTokenA&s=100&e=14400&f=1&node=edge-a&i=10.0&sp=2500&asn=1&q=h,n,l&rq=fakeRqA`;
+	const hlsB = `${hlsPath}?t=fakeTokenB&s=103&e=14400&f=1&node=edge-b&i=10.1&sp=2500&asn=1&q=h,n,l&rq=fakeRqB`;
+	const requestedName = 'Tomb.Raider.King.S01E06.German.1080p.AAC.WebRip.x264-GSD.mp4';
+
+	it('treats signed HLS URLs with the same path as one video', async () => {
+		const first = await api.addDownloads([
+			item(hlsA, {
+				fileName: requestedName,
+				title: 'master',
+				extractor: 'generic',
+				extractorVideoId: 'master.m3u8?t=fakeTokenA&s=100'
+			})
+		]);
+		const second = await api.addDownloads([
+			item(hlsB, {
+				extractor: 'generic',
+				extractorVideoId: 'master.m3u8?t=fakeTokenB&s=103'
+			})
+		]);
+
+		expect(first.queued).toHaveLength(1);
+		expect(first.queued[0].canonicalUrl).toBe(hlsPath);
+		expect(first.queued[0].mediaKey).toBeNull();
+		expect(first.queued[0].filenameKey).toBe(
+			'tomb.raider.king.s01e06.german.1080p.aac.webrip.x264-gsd'
+		);
+		expect(second.duplicates).toHaveLength(1);
+		expect(second.duplicates[0].message).toContain('Already in the list');
+		expect(second.duplicates[0].id).toBe(first.queued[0].id);
+		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
+	});
+
+	it('rejects a different URL that asks for the same filename', async () => {
+		const name = requestedName;
+		const first = await api.addDownloads([
+			item('https://cdn-a.example.test/one/video.mp4?sig=fake-a', { fileName: name, title: 'One' })
+		]);
+		await api.db
+			.update(downloadsSchema)
+			.set({ status: 'completed', filePath: '/downloads/one.mp4' })
+			.where(eq(downloadsSchema.id, first.queued[0].id));
+
+		const second = await api.addDownloads([
+			item('https://cdn-b.example.test/two/other.webm?sig=fake-b', {
+				fileName: `${name}.MP4`
+			})
+		]);
+
+		expect(second.queued).toHaveLength(0);
+		expect(second.duplicates).toHaveLength(1);
+		expect(second.duplicates[0].id).toBe(first.queued[0].id);
+		expect(second.duplicates[0].message).toContain('Already in the list');
+		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
+	});
+
+	it('keeps generic page URLs apart when only the id query differs', async () => {
+		const first = await api.addDownloads([item('https://videos.example.test/watch?id=episode-6')]);
+		const second = await api.addDownloads([item('https://videos.example.test/watch?id=episode-7')]);
+
+		expect(first.queued).toHaveLength(1);
+		expect(second.queued).toHaveLength(1);
+		expect(first.queued[0].canonicalUrl).not.toBe(second.queued[0].canonicalUrl);
+		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(2);
+	});
+
+	it('reuses a cancelled entry for a new signed URL and for the same filename', async () => {
+		const created = await api.addDownloads([item(hlsA, { fileName: requestedName })]);
+		const id = created.queued[0].id;
+		await api.db
+			.update(downloadsSchema)
+			.set({ status: 'cancelled', errorMessage: 'Cancelled by user' })
+			.where(eq(downloadsSchema.id, id));
+
+		const refreshed = await api.addDownloads([item(hlsB)]);
+		expect(refreshed.retried.map((row) => row.id)).toEqual([id]);
+		expect(refreshed.retried[0].status).toBe('pending');
+		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
+
+		await api.db
+			.update(downloadsSchema)
+			.set({ status: 'cancelled', errorMessage: 'Cancelled by user' })
+			.where(eq(downloadsSchema.id, id));
+
+		const byName = await api.addDownloads([
+			item('https://other.example.test/watch?id=different-page', {
+				fileName: requestedName.toUpperCase()
+			})
+		]);
+		expect(byName.retried.map((row) => row.id)).toEqual([id]);
+		expect(byName.queued).toHaveLength(0);
+		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
+	});
+
+	it('backfills one host-path key and one filename key without deleting rows', () => {
+		const now = new Date();
+		api.db
+			.insert(downloadsSchema)
+			.values([
+				{
+					id: 'signed-a',
+					videoUrl: hlsA,
+					appendTitle: false,
+					quality: 'best',
+					status: 'completed',
+					fileName: requestedName,
+					filePath: `/downloads/${requestedName}.mp4`,
+					extractor: 'generic',
+					extractorVideoId: 'master.m3u8?t=fakeTokenA',
+					canonicalUrl: hlsA,
+					createdAt: now,
+					updatedAt: now,
+					finishedAt: now
+				},
+				{
+					id: 'signed-b',
+					videoUrl: hlsB,
+					appendTitle: false,
+					quality: 'best',
+					status: 'cancelled',
+					fileName: `${requestedName}.mp4`,
+					extractor: 'generic',
+					extractorVideoId: 'master.m3u8?t=fakeTokenB',
+					canonicalUrl: hlsB,
+					createdAt: now,
+					updatedAt: now,
+					finishedAt: now
+				}
+			])
+			.run();
+
+		api.backfillDuplicateKeys();
+
+		const rows = api.db.select().from(downloadsSchema).all();
+		expect(rows).toHaveLength(2);
+		const winner = rows.find((row) => row.id === 'signed-a');
+		const loser = rows.find((row) => row.id === 'signed-b');
+		expect(winner?.canonicalUrl).toBe(hlsPath);
+		expect(winner?.mediaKey).toBeNull();
+		expect(winner?.filenameKey).toBe('tomb.raider.king.s01e06.german.1080p.aac.webrip.x264-gsd');
+		expect(loser?.canonicalUrl).toBeNull();
+		expect(loser?.filenameKey).toBeNull();
+	});
 });
 
 describe('dedupe migration', () => {
@@ -288,6 +435,43 @@ describe('dedupe migration', () => {
 				.prepare('UPDATE downloads SET canonical_url = ? WHERE id = ?')
 				.run('https://www.youtube.com/watch?v=dQw4w9WgXcQ', '2')
 		).toThrow(/UNIQUE constraint failed/);
+
+		database.close();
+	});
+
+	it('adds filename_key on a database that already applied 0003', () => {
+		const file = path.join(root, 'after-0003.db');
+		const database = new Database(file);
+		database.exec(
+			'CREATE TABLE downloads (id text primary key not null, video_url text not null, file_name text, status text not null)'
+		);
+		const sql0003 = readFileSync(
+			path.join(process.cwd(), 'drizzle/0003_download_dedupe.sql'),
+			'utf8'
+		);
+		for (const statement of sql0003.split('--> statement-breakpoint')) database.exec(statement);
+
+		const insert = database.prepare(
+			'INSERT INTO downloads (id, video_url, file_name, status) VALUES (?, ?, ?, ?)'
+		);
+		insert.run('1', 'https://cdn.example.test/a/master.m3u8?t=fakeTokenA', 'Show.mp4', 'completed');
+		insert.run('2', 'https://cdn.example.test/a/master.m3u8?t=fakeTokenB', 'Show.mp4', 'cancelled');
+
+		const sql0004 = readFileSync(path.join(process.cwd(), 'drizzle/0004_filename_key.sql'), 'utf8');
+		for (const statement of sql0004.split('--> statement-breakpoint')) database.exec(statement);
+
+		const count = database.prepare('SELECT count(*) AS n FROM downloads').get() as { n: number };
+		expect(count.n).toBe(2);
+		const keys = database.prepare('SELECT filename_key AS key FROM downloads').all() as {
+			key: string | null;
+		}[];
+		expect(keys.map((row) => row.key)).toEqual([null, null]);
+
+		database.prepare('UPDATE downloads SET filename_key = ? WHERE id = ?').run('show', '1');
+		expect(() =>
+			database.prepare('UPDATE downloads SET filename_key = ? WHERE id = ?').run('show', '2')
+		).toThrow(/UNIQUE constraint failed/);
+		database.prepare('UPDATE downloads SET filename_key = NULL WHERE id = ?').run('2');
 
 		database.close();
 	});

@@ -11,6 +11,7 @@ import {
 import type { DownloadAdd, Download } from './db/schema';
 import { sanitizeFilename } from './utils';
 import { reliableExtractorVideoId } from './media-identity';
+import { filenameKeyFor } from './media-extensions';
 import { canonicalVideoUrl, mediaKeyFor } from './url-canonical';
 import { isUniqueConstraintError } from './duplicate-guard';
 import { ENABLE_THUMBNAILS } from './config';
@@ -131,6 +132,7 @@ async function fetchMetadataAndQueue(item: Download) {
 			videoUrl: resolvedUrl,
 			canonicalUrl,
 			mediaKey,
+			filenameKey: item.filenameKey,
 			extractor: videoInfo.extractor,
 			extractorVideoId: identityVideoId
 		};
@@ -204,6 +206,11 @@ function entryToDownload(parent: Download, entry: Record<string, unknown>): Down
 	const extractor = stringOrNull(entry.extractor) || parent.extractor;
 	const extractorVideoId = reliableExtractorVideoId(extractor, stringOrNull(entry.id));
 	const thumbnailUrl = ENABLE_THUMBNAILS ? stringOrNull(entry.thumbnail) : null;
+	const fileName = title ? buildFileName(parent, title) : parent.fileName;
+	// A name copied unchanged onto every playlist entry must not share one
+	// filename key. Distinct append-title names still do.
+	const filenameKey =
+		parent.fileName && fileName && fileName !== parent.fileName ? filenameKeyFor(fileName) : null;
 
 	return {
 		videoUrl: entryUrl,
@@ -214,7 +221,8 @@ function entryToDownload(parent: Download, entry: Record<string, unknown>): Down
 		subscriptionId: parent.subscriptionId,
 		profileId: parent.profileId,
 		folder: parent.folder,
-		fileName: title ? buildFileName(parent, title) : parent.fileName,
+		fileName,
+		filenameKey,
 		appendTitle: parent.appendTitle,
 		quality: parent.quality,
 		status: 'pending',

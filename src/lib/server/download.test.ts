@@ -49,12 +49,30 @@ if [ "$VF_MODE" = "fail" ]; then
   echo "ERROR: boom" >&2
   exit 1
 fi
+base="$VF_BASE"
+prev=""
+for arg in "$@"; do
+  case "$prev" in
+    -o|--output)
+      stem=\${arg%%.%(ext)s*}
+      base=$(basename "$stem")
+      ;;
+  esac
+  case "$arg" in
+    --output=*)
+      value=\${arg#--output=}
+      stem=\${value%%.%(ext)s*}
+      base=$(basename "$stem")
+      ;;
+  esac
+  prev="$arg"
+done
 mkdir -p "$VF_TEMP"
-printf fake > "$VF_TEMP/$VF_BASE.mp4"
+printf fake > "$VF_TEMP/$base.mp4"
 exit 0
 `;
 
-function item(): DownloadItem {
+function item(fileName = 'clip'): DownloadItem {
 	const now = new Date();
 	return {
 		id: 'dl-1',
@@ -64,7 +82,7 @@ function item(): DownloadItem {
 		subscriptionId: null,
 		profileId: 'best',
 		folder: null,
-		fileName: 'clip',
+		fileName,
 		appendTitle: false,
 		quality: 'best',
 		status: 'queued',
@@ -79,6 +97,7 @@ function item(): DownloadItem {
 		advancedOptionsJson: null,
 		canonicalUrl: null,
 		mediaKey: null,
+		filenameKey: null,
 		createdAt: now,
 		updatedAt: now,
 		finishedAt: null,
@@ -86,7 +105,7 @@ function item(): DownloadItem {
 	};
 }
 
-async function settleOrHang(mode: 'ok' | 'fail') {
+async function settleOrHang(mode: 'ok' | 'fail', fileName = 'clip') {
 	process.env.VF_MODE = mode;
 	process.env.VF_MARKER = dirs.marker;
 	process.env.VF_TEMP = dirs.temp;
@@ -95,7 +114,7 @@ async function settleOrHang(mode: 'ok' | 'fail') {
 
 	let outcome: 'settled' | 'hung' = 'hung';
 	await Promise.race([
-		startDownload(item()).then(() => {
+		startDownload(item(fileName)).then(() => {
 			outcome = 'settled';
 		}),
 		new Promise((resolve) => setTimeout(resolve, 4000))
@@ -130,6 +149,15 @@ describe('startDownload actually starts yt-dlp', () => {
 		expect(setStatus).toHaveBeenCalledWith('dl-1', 'downloading');
 		expect(setStatus).toHaveBeenCalledWith('dl-1', 'completed');
 		expect(updateDownload).toHaveBeenCalledWith('dl-1', { filePath: 'clip.mp4' });
+	});
+
+	it('does not save a second extension when the requested filename already has one', async () => {
+		const name = 'Tomb.Raider.King.S01E06.German.1080p.AAC.WebRip.x264-GSD.mp4';
+		const outcome = await settleOrHang('ok', name);
+
+		expect(outcome).toBe('settled');
+		expect(updateDownload).toHaveBeenCalledWith('dl-1', { filePath: name });
+		expect(updateDownload).not.toHaveBeenCalledWith('dl-1', { filePath: `${name}.mp4` });
 	});
 
 	it('surfaces a yt-dlp failure instead of hanging', async () => {

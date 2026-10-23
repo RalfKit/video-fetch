@@ -64,8 +64,27 @@ describe('canonicalVideoUrl', () => {
 		expect(canonicalVideoUrl('https://cdn.example.com/a.m3u8?token=one&i=185')).not.toBe(
 			canonicalVideoUrl('https://cdn.example.com/b.m3u8?token=two&i=185')
 		);
-		expect(canonicalVideoUrl('https://cdn.example.com/a.mp4?sig=aaa')).not.toBe(
+		expect(canonicalVideoUrl('https://cdn.example.com/a.mp4?sig=aaa')).toBe(
 			canonicalVideoUrl('https://cdn.example.com/a.mp4?sig=bbb')
+		);
+		expect(canonicalVideoUrl('https://cdn.example.com/a.mp4?sig=aaa')).toBe(
+			'https://cdn.example.com/a.mp4'
+		);
+	});
+
+	it('drops the signed query on direct media and keeps it on page URLs', () => {
+		const path =
+			'https://cdn.example.test/engine/hls2-c/01/18138/episode_,h,n,l,.urlset/master.m3u8';
+		const tokenA = `${path}?t=fakeTokenA&s=100&e=14400&rq=fakeRqA#t=12`;
+		const tokenB = `${path}?t=fakeTokenB&s=103&e=14400&rq=fakeRqB`;
+		expect(canonicalVideoUrl(tokenA)).toBe(path);
+		expect(canonicalVideoUrl(tokenB)).toBe(path);
+
+		expect(canonicalVideoUrl('https://videos.example.test/watch?id=episode-6')).not.toBe(
+			canonicalVideoUrl('https://videos.example.test/watch?id=episode-7')
+		);
+		expect(canonicalVideoUrl('https://videos.example.test/watch?id=episode-6&utm_source=x')).toBe(
+			'https://videos.example.test/watch?id=episode-6'
 		);
 	});
 
@@ -81,6 +100,7 @@ describe('mediaKeyFor', () => {
 	it('keys reliable extractor ids and ignores generic ones', () => {
 		expect(mediaKeyFor('YouTube', 'dQw4w9WgXcQ')).toBe('youtube\u001fdQw4w9WgXcQ');
 		expect(mediaKeyFor('generic', 'zo=&i=185')).toBeNull();
+		expect(mediaKeyFor('generic', 'master.m3u8?t=fakeTokenA&s=100')).toBeNull();
 		expect(mediaKeyFor('vimeo', '123')).not.toBe(mediaKeyFor('youtube', '123'));
 	});
 });

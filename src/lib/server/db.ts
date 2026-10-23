@@ -6,6 +6,7 @@ import type { DownloadStatus } from '$lib/types/download';
 import { DELETE_FILE_ON_DELETE } from './config';
 import { deleteDownloadFile } from './folders';
 import { isReliableMediaIdentity } from './media-identity';
+import { filenameKeyFor } from './media-extensions';
 import { canonicalVideoUrl, mediaKeyFor } from './url-canonical';
 import {
 	alreadyInListMessage,
@@ -30,6 +31,7 @@ type IdentityKeys = {
 	videoUrl?: string | null;
 	canonicalUrl?: string | null;
 	mediaKey?: string | null;
+	filenameKey?: string | null;
 	extractor?: string | null;
 	extractorVideoId?: string | null;
 };
@@ -37,10 +39,15 @@ type IdentityKeys = {
 function withIdentity(item: DownloadAdd): DownloadAdd {
 	const canonicalUrl = item.canonicalUrl ?? canonicalVideoUrl(item.videoUrl);
 	const mediaKey = item.mediaKey ?? mediaKeyFor(item.extractor, item.extractorVideoId);
+	// An explicit null opts out (playlist rows that share the parent's name).
+	const filenameKey = Object.prototype.hasOwnProperty.call(item, 'filenameKey')
+		? item.filenameKey || null
+		: filenameKeyFor(item.fileName);
 	return {
 		...item,
 		canonicalUrl: canonicalUrl || null,
-		mediaKey: mediaKey || null
+		mediaKey: mediaKey || null,
+		filenameKey
 	};
 }
 
@@ -49,6 +56,7 @@ function identityWhere(keys: IdentityKeys, exceptId?: string): SQL | undefined {
 	if (keys.videoUrl) parts.push(eq(downloadsSchema.videoUrl, keys.videoUrl));
 	if (keys.canonicalUrl) parts.push(eq(downloadsSchema.canonicalUrl, keys.canonicalUrl));
 	if (keys.mediaKey) parts.push(eq(downloadsSchema.mediaKey, keys.mediaKey));
+	if (keys.filenameKey) parts.push(eq(downloadsSchema.filenameKey, keys.filenameKey));
 
 	const identityId = isReliableMediaIdentity(keys.extractor, keys.extractorVideoId)
 		? keys.extractorVideoId
@@ -79,6 +87,9 @@ function retryPatch(
 	const mediaTaken = matches.some(
 		(row) => row.id !== existing.id && !!item.mediaKey && row.mediaKey === item.mediaKey
 	);
+	const filenameTaken = matches.some(
+		(row) => row.id !== existing.id && !!item.filenameKey && row.filenameKey === item.filenameKey
+	);
 
 	return {
 		status: 'pending',
@@ -91,7 +102,8 @@ function retryPatch(
 		appendTitle: item.appendTitle,
 		advancedOptionsJson: item.advancedOptionsJson ?? existing.advancedOptionsJson,
 		canonicalUrl: existing.canonicalUrl ?? (canonicalTaken ? null : (item.canonicalUrl ?? null)),
-		mediaKey: existing.mediaKey ?? (mediaTaken ? null : (item.mediaKey ?? null))
+		mediaKey: existing.mediaKey ?? (mediaTaken ? null : (item.mediaKey ?? null)),
+		filenameKey: filenameTaken ? existing.filenameKey : (item.filenameKey ?? existing.filenameKey)
 	};
 }
 
@@ -136,6 +148,7 @@ function claimOne(
 			const rest = retryPatch(item, decision.existing, matches);
 			delete rest.canonicalUrl;
 			delete rest.mediaKey;
+			delete rest.filenameKey;
 			const [updated] = tx
 				.update(downloadsSchema)
 				.set(rest)
@@ -278,12 +291,17 @@ export async function absorbNewerDuplicate(incoming: Download, existing: Downloa
 	await setStatus(incoming.id, 'cancelled', alreadyInListMessage(existing));
 }
 
-type DedupeRow = Download & { computedCanonical: string | null; computedMedia: string | null };
+type DedupeRow = Download & {
+	computedCanonical: string | null;
+	computedMedia: string | null;
+	computedFilename: string | null;
+};
 
 /**
- * Assigns `canonical_url` / `media_key` on databases that already contain rows.
- * When several rows normalize to the same video, one preferred row keeps the
- * key and the others stay in the list with a NULL key. Nothing is deleted.
+ * Assigns `canonical_url`, `media_key` and `filename_key` on databases that
+ * already contain rows. When several rows normalize to the same video, one
+ * preferred row keeps the key and the others stay in the list with NULL.
+ * Nothing is deleted. Rows without a filename keep a NULL filename key.
  */
 export function backfillDuplicateKeys() {
 	const rows: DedupeRow[] = db
@@ -293,7 +311,8 @@ export function backfillDuplicateKeys() {
 		.map((row) => ({
 			...row,
 			computedCanonical: canonicalVideoUrl(row.videoUrl),
-			computedMedia: mediaKeyFor(row.extractor, row.extractorVideoId)
+			computedMedia: mediaKeyFor(row.extractor, row.extractorVideoId),
+			computedFilename: filenameKeyFor(row.fileName)
 		}));
 
 	const canonical = planKeyAssignment(
@@ -306,9 +325,19 @@ export function backfillDuplicateKeys() {
 		(row) => row.computedMedia,
 		(row) => row.mediaKey
 	);
+	const filename = planKeyAssignment(
+		rows,
+		(row) => row.computedFilename,
+		(row) => row.filenameKey
+	);
 
 	if (
-		canonical.clears.length + canonical.sets.length + media.clears.length + media.sets.length ===
+		canonical.clears.length +
+			canonical.sets.length +
+			media.clears.length +
+			media.sets.length +
+			filename.clears.length +
+			filename.sets.length ===
 		0
 	) {
 		return;
@@ -324,6 +353,9 @@ export function backfillDuplicateKeys() {
 		for (const id of media.clears) {
 			tx.update(downloadsSchema).set({ mediaKey: null }).where(eq(downloadsSchema.id, id)).run();
 		}
+		for (const id of filename.clears) {
+			tx.update(downloadsSchema).set({ filenameKey: null }).where(eq(downloadsSchema.id, id)).run();
+		}
 		for (const assignment of canonical.sets) {
 			tx.update(downloadsSchema)
 				.set({ canonicalUrl: assignment.value })
@@ -336,6 +368,12 @@ export function backfillDuplicateKeys() {
 				.where(eq(downloadsSchema.id, assignment.id))
 				.run();
 		}
+		for (const assignment of filename.sets) {
+			tx.update(downloadsSchema)
+				.set({ filenameKey: assignment.value })
+				.where(eq(downloadsSchema.id, assignment.id))
+				.run();
+		}
 	});
 
 	console.info(
@@ -343,8 +381,10 @@ export function backfillDuplicateKeys() {
 			new Set([
 				...canonical.clears,
 				...media.clears,
+				...filename.clears,
 				...canonical.sets.map((row) => row.id),
-				...media.sets.map((row) => row.id)
+				...media.sets.map((row) => row.id),
+				...filename.sets.map((row) => row.id)
 			]).size
 		} existing row(s). Duplicate list entries were kept.`
 	);

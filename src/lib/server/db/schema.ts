@@ -28,6 +28,7 @@ export const downloads = sqliteTable(
 		advancedOptionsJson: text('advanced_options_json'),
 		canonicalUrl: text('canonical_url'),
 		mediaKey: text('media_key'),
+		filenameKey: text('filename_key'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' })
 			.notNull()
 			.$defaultFn(() => new Date()),
@@ -40,6 +41,7 @@ export const downloads = sqliteTable(
 		uniqueIndex('uq_downloads_video_url').on(t.videoUrl),
 		uniqueIndex('uq_downloads_canonical_url').on(t.canonicalUrl),
 		uniqueIndex('uq_downloads_media_key').on(t.mediaKey),
+		uniqueIndex('uq_downloads_filename_key').on(t.filenameKey),
 		index('idx_downloads_status').on(t.status),
 		index('idx_downloads_media_identity').on(t.extractor, t.extractorVideoId)
 	]

@@ -4,11 +4,14 @@
  * YouTube and Vimeo links are reduced to the video id so common spellings
  * (`youtu.be`, shorts, mobile, tracking params) collide. Other sites only lose
  * fragments, default ports, a leading `www.`, a trailing slash and known
- * tracking parameters. Signed query values stay, so unrelated CDN URLs are not
- * folded together.
+ * tracking parameters. Direct media and manifest paths (`.m3u8`, `.mp4`, …)
+ * also drop the query string, because signed CDN tokens change on every
+ * request. Other generic URLs keep the query: page links often carry the
+ * video id there. The generic extractor id is never a media key.
  */
 
 import { reliableExtractorVideoId } from './media-identity';
+import { isDirectMediaPath } from './media-extensions';
 
 const YT_ID = /^[a-zA-Z0-9_-]{11}$/;
 
@@ -138,13 +141,16 @@ function genericCanonical(input: string, extraDrop?: Set<string>): string | null
 	url.hash = '';
 	url.hostname = hostname(url);
 	if (url.port === '443' || url.port === '80') url.port = '';
-
-	for (const key of [...url.searchParams.keys()]) {
-		if (isGenericTracking(key) || extraDrop?.has(key.toLowerCase())) url.searchParams.delete(key);
-	}
-	url.searchParams.sort();
-
 	if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, '');
+
+	if (isDirectMediaPath(url.pathname)) {
+		url.search = '';
+	} else {
+		for (const key of [...url.searchParams.keys()]) {
+			if (isGenericTracking(key) || extraDrop?.has(key.toLowerCase())) url.searchParams.delete(key);
+		}
+		url.searchParams.sort();
+	}
 
 	if (url.pathname === '/') return `${url.protocol}//${url.host}${url.search}`;
 	return url.toString();

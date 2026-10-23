@@ -16,7 +16,9 @@
  * cancelled with "Already downloaded or queued".
  *
  * Exact and normalized URL re-adds are prevented by the unique `video_url` and
- * `canonical_url` indexes. A reliable extractor id is stored separately in
+ * `canonical_url` indexes. Direct media paths compare host and path only, so a
+ * fresh signed query does not look like a new video. A client filename is
+ * stored separately in `filename_key`. A reliable extractor id is stored in
  * `media_key`. Being conservative for `generic` only risks an occasional real
  * re-download (safe) instead of wrongly cancelling a different video (unsafe).
  */

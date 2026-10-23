@@ -84,6 +84,7 @@ exit 0
 			advancedOptionsJson: null,
 			canonicalUrl: null,
 			mediaKey: null,
+			filenameKey: null,
 			createdAt: now,
 			updatedAt: now,
 			finishedAt: null,
