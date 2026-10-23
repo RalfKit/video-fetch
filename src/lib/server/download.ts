@@ -10,7 +10,7 @@ import { ytdlp } from './ytdlp';
 import type { ArgsOptions, VideoProgress } from 'ytdlp-nodejs';
 import { getBuiltinProfile, parseProfileOptions } from './profiles';
 import { ensureExistingDownloadFolder } from './folders';
-import { sanitizeFilename } from './utils';
+import { downloadOutputBase } from './media-extensions';
 import {
 	DEFAULT_DOWNLOAD_INACTIVITY_TIMEOUT_MS,
 	inactivityFailureMessage
@@ -52,7 +52,9 @@ function resolveInactivityTimeoutMs(): number {
 export async function startDownload(item: DownloadItem, signal?: AbortSignal): Promise<void> {
 	const stderrBuffer: string[] = [];
 	const targetFolder = await ensureExistingDownloadFolder(item.folder);
-	const outputBase = `${sanitizeFilename(item.fileName || item.title || item.extractorVideoId || item.id)}`;
+	const outputBase = downloadOutputBase(
+		item.fileName || item.title || item.extractorVideoId || item.id
+	);
 	const tempOutput = path.join(TEMP_DOWNLOAD_FOLDER, `${outputBase}.%(ext)s`);
 
 	await setStatus(item.id, 'downloading');

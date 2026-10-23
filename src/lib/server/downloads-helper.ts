@@ -3,6 +3,7 @@ import type { DownloadAdd } from '$lib/server/db/schema';
 import { sanitizeFilename, splitShellLikeArgs } from '$lib/server/utils';
 import { getBuiltinProfile } from './profiles';
 import { ensureExistingDownloadFolder, sanitizeFolder } from './folders';
+import { canonicalVideoUrl } from './url-canonical';
 
 const URL_PATTERN = /^(https?:\/\/).+$/i;
 const MAX_FILENAME_LENGTH = 200;
@@ -61,6 +62,7 @@ export async function prepareDownloadItems(
 		result.push({
 			videoUrl,
 			originalUrl: videoUrl,
+			canonicalUrl: canonicalVideoUrl(videoUrl),
 			fileName,
 			appendTitle: !!raw.appendTitle,
 			quality: (raw.quality as DownloadAdd['quality']) ?? 'best',

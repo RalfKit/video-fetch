@@ -1,10 +1,19 @@
 import PQueue from 'p-queue';
 import { downloads, paused } from '$lib/server/store';
 import { get } from 'svelte/store';
-import { addDownloads, findDuplicateByMediaIdentity, setStatus, updateDownload } from './db';
+import {
+	absorbNewerDuplicate,
+	addDownloads,
+	findConflictingDownload,
+	setStatus,
+	updateDownload
+} from './db';
 import type { DownloadAdd, Download } from './db/schema';
 import { sanitizeFilename } from './utils';
 import { reliableExtractorVideoId } from './media-identity';
+import { filenameKeyFor } from './media-extensions';
+import { canonicalVideoUrl, mediaKeyFor } from './url-canonical';
+import { isUniqueConstraintError } from './duplicate-guard';
 import { ENABLE_THUMBNAILS } from './config';
 import type { PlaylistInfo, VideoInfo } from 'ytdlp-nodejs';
 
@@ -100,6 +109,8 @@ async function fetchMetadataAndQueue(item: Download) {
 				title: info.title,
 				extractor: info.extractor,
 				extractorVideoId: reliableExtractorVideoId(info.extractor, info.id),
+				canonicalUrl: canonicalVideoUrl(item.videoUrl) ?? item.canonicalUrl,
+				mediaKey: mediaKeyFor(info.extractor, reliableExtractorVideoId(info.extractor, info.id)),
 				metadataJson: JSON.stringify({
 					id: info.id,
 					title: info.title,
@@ -114,30 +125,45 @@ async function fetchMetadataAndQueue(item: Download) {
 		const videoInfo = info as VideoInfo;
 		// Only a reliable identity (non-generic) is stored and used for dedup.
 		const identityVideoId = reliableExtractorVideoId(videoInfo.extractor, videoInfo.id);
-		const duplicate = await findDuplicateByMediaIdentity(videoInfo.extractor, identityVideoId);
-		if (duplicate && duplicate.id !== item.id) {
+		const resolvedUrl = videoInfo.webpage_url || item.videoUrl;
+		const canonicalUrl = canonicalVideoUrl(resolvedUrl) ?? item.canonicalUrl ?? null;
+		const mediaKey = mediaKeyFor(videoInfo.extractor, identityVideoId);
+		const identity = {
+			videoUrl: resolvedUrl,
+			canonicalUrl,
+			mediaKey,
+			filenameKey: item.filenameKey,
+			extractor: videoInfo.extractor,
+			extractorVideoId: identityVideoId
+		};
+
+		const duplicate = await findConflictingDownload(identity, item.id);
+		if (duplicate) {
+			await absorbNewerDuplicate(item, duplicate);
+			return;
+		}
+
+		try {
 			await updateDownload(item.id, {
+				videoUrl: resolvedUrl,
+				originalUrl: item.originalUrl ?? videoInfo.original_url ?? item.videoUrl,
+				canonicalUrl,
+				mediaKey,
+				fileName: item.fileName || buildFileName(item, videoInfo.title),
 				title: videoInfo.title,
 				extractor: videoInfo.extractor,
 				extractorVideoId: identityVideoId,
 				thumbnailUrl: ENABLE_THUMBNAILS ? videoInfo.thumbnail : null,
+				duration: videoInfo.duration,
 				metadataJson: compactMetadata(videoInfo as unknown as Record<string, unknown>)
 			});
-			await setStatus(item.id, 'cancelled', 'Already downloaded or queued');
+		} catch (err) {
+			if (!isUniqueConstraintError(err)) throw err;
+			const winner = await findConflictingDownload(identity, item.id);
+			if (winner) await absorbNewerDuplicate(item, winner);
+			else await setStatus(item.id, 'cancelled', 'Already in the list.');
 			return;
 		}
-
-		await updateDownload(item.id, {
-			videoUrl: videoInfo.webpage_url || item.videoUrl,
-			originalUrl: item.originalUrl ?? videoInfo.original_url ?? item.videoUrl,
-			fileName: item.fileName || buildFileName(item, videoInfo.title),
-			title: videoInfo.title,
-			extractor: videoInfo.extractor,
-			extractorVideoId: identityVideoId,
-			thumbnailUrl: ENABLE_THUMBNAILS ? videoInfo.thumbnail : null,
-			duration: videoInfo.duration,
-			metadataJson: compactMetadata(videoInfo as unknown as Record<string, unknown>)
-		});
 		await setStatus(item.id, 'queued');
 	} catch (err) {
 		const fallbackName = item.fileName || sanitizeFilename(deriveNameFromUrl(item.videoUrl));
@@ -180,15 +206,23 @@ function entryToDownload(parent: Download, entry: Record<string, unknown>): Down
 	const extractor = stringOrNull(entry.extractor) || parent.extractor;
 	const extractorVideoId = reliableExtractorVideoId(extractor, stringOrNull(entry.id));
 	const thumbnailUrl = ENABLE_THUMBNAILS ? stringOrNull(entry.thumbnail) : null;
+	const fileName = title ? buildFileName(parent, title) : parent.fileName;
+	// A name copied unchanged onto every playlist entry must not share one
+	// filename key. Distinct append-title names still do.
+	const filenameKey =
+		parent.fileName && fileName && fileName !== parent.fileName ? filenameKeyFor(fileName) : null;
 
 	return {
 		videoUrl: entryUrl,
 		originalUrl: entryUrl,
+		canonicalUrl: canonicalVideoUrl(entryUrl),
+		mediaKey: mediaKeyFor(extractor, extractorVideoId),
 		source: parent.source,
 		subscriptionId: parent.subscriptionId,
 		profileId: parent.profileId,
 		folder: parent.folder,
-		fileName: title ? buildFileName(parent, title) : parent.fileName,
+		fileName,
+		filenameKey,
 		appendTitle: parent.appendTitle,
 		quality: parent.quality,
 		status: 'pending',

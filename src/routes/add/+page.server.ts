@@ -1,7 +1,8 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { fail, redirect, type ActionFailure } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { prepareDownloadItems, ValidationError } from '$lib/server/downloads-helper';
-import { addDownloads } from '$lib/server/db';
+import { addDownloads, type AddDownloadsOutcome } from '$lib/server/db';
+import { duplicateErrorBody, type ListedDuplicate } from '$lib/server/duplicate-guard';
 import { processDownloads } from '$lib/server/process';
 import { listDownloadFolders } from '$lib/server/folders';
 import { listProfiles } from '$lib/server/profiles';
@@ -11,8 +12,10 @@ export const load: PageServerLoad = async () => ({
 	profiles: await listProfiles()
 });
 
+type AddForm = { error: string; duplicates: ListedDuplicate[] };
+
 export const actions: Actions = {
-	addUrl: async ({ request }) => {
+	addUrl: async ({ request }): Promise<ActionFailure<AddForm>> => {
 		try {
 			const formData = await request.formData();
 			const videoUrl = (formData.get('video_url')?.toString() || '').trim();
@@ -42,17 +45,19 @@ export const actions: Actions = {
 					: null
 			});
 
-			await addDownloads(items);
-			void processDownloads();
+			const outcome = await addDownloads(items);
+			const duplicate = duplicateForm(outcome);
+			if (duplicate) return fail(409, { error: duplicate.error, duplicates: duplicate.duplicates });
 		} catch (err) {
-			if (err instanceof ValidationError) return fail(err.status, { error: err.message });
-			return fail(400, { error: (err as Error).message });
+			if (err instanceof ValidationError)
+				return fail(err.status, { error: err.message, duplicates: [] });
+			return fail(400, { error: (err as Error).message, duplicates: [] });
 		}
 
 		redirect(302, '/');
 	},
 
-	importBatch: async ({ request }) => {
+	importBatch: async ({ request }): Promise<ActionFailure<AddForm>> => {
 		try {
 			const formData = await request.formData();
 			const file = formData.get('import_file') as File | null;
@@ -62,13 +67,13 @@ export const actions: Actions = {
 			if (text.trim()) content = text;
 			else if (file && file.size > 0) content = await file.text();
 
-			if (!content.trim()) return fail(400, { error: 'No import data found' });
+			if (!content.trim()) return fail(400, { error: 'No import data found', duplicates: [] });
 
 			const lines = content
 				.split(/\r?\n/)
 				.map((l) => l.trim())
 				.filter(Boolean);
-			if (lines.length === 0) return fail(400, { error: 'No valid lines found' });
+			if (lines.length === 0) return fail(400, { error: 'No valid lines found', duplicates: [] });
 
 			// Create input array for prepareDownloadItems
 			const profileId = formData.get('profile_id')?.toString() || 'best';
@@ -90,13 +95,27 @@ export const actions: Actions = {
 			});
 
 			const items = await prepareDownloadItems(raw);
-			await addDownloads(items);
-			void processDownloads();
+			const outcome = await addDownloads(items);
+			const duplicate = duplicateForm(outcome);
+			if (duplicate) return fail(409, { error: duplicate.error, duplicates: duplicate.duplicates });
 		} catch (err) {
-			if (err instanceof ValidationError) return fail(err.status, { error: err.message });
-			return fail(400, { error: (err as Error).message });
+			if (err instanceof ValidationError)
+				return fail(err.status, { error: err.message, duplicates: [] });
+			return fail(400, { error: (err as Error).message, duplicates: [] });
 		}
 
 		redirect(302, '/');
 	}
 };
+
+function duplicateForm(outcome: AddDownloadsOutcome) {
+	const added = outcome.queued.length + outcome.retried.length;
+	if (added > 0) void processDownloads();
+	if (outcome.duplicates.length === 0) return null;
+
+	const body = duplicateErrorBody(outcome.duplicates);
+	return {
+		error: added > 0 ? `Added ${added}.\n${body.error}` : body.error,
+		duplicates: body.duplicates
+	};
+}

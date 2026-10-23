@@ -5,6 +5,7 @@ import { prepareDownloadItems } from './downloads-helper';
 import { addDownloads } from './db';
 import { processDownloads } from './process';
 import { reliableExtractorVideoId } from './media-identity';
+import { canonicalVideoUrl, mediaKeyFor } from './url-canonical';
 import type { PlaylistInfo, VideoInfo } from 'ytdlp-nodejs';
 
 export type SubscriptionImportMode = 'new_only' | 'last_days' | 'last_videos' | 'full_archive';
@@ -408,9 +409,13 @@ async function filterDuplicates(entries: SubscriptionEntry[], stats: Record<stri
 		const id = stringOrNull(entry.raw.id);
 		const identityId = reliableExtractorVideoId(extractor, id);
 
-		// Always dedup by exact URL. Only add the media-identity clause when the
-		// identity is reliable (never for `generic`, whose id is URL-derived).
+		// Exact URL, normalized URL, and a reliable extractor id. Generic ids stay
+		// out of the identity clause (their value is derived from the URL).
 		const conditions: SQL[] = [eq(downloads.videoUrl, entry.url)];
+		const canonical = canonicalVideoUrl(entry.url);
+		if (canonical) conditions.push(eq(downloads.canonicalUrl, canonical));
+		const mediaKey = mediaKeyFor(extractor, identityId);
+		if (mediaKey) conditions.push(eq(downloads.mediaKey, mediaKey));
 		if (extractor && identityId) {
 			conditions.push(
 				and(eq(downloads.extractor, extractor), eq(downloads.extractorVideoId, identityId)) as SQL

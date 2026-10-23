@@ -173,6 +173,25 @@ eventSource.onmessage = (event) => {
 
 Adds one or multiple video download jobs. The endpoint validates basic payload shape, stores queue items, and returns before metadata extraction starts.
 
+The same video is not queued twice. YouTube links match across `youtu.be`, `youtube.com/watch`, Shorts, `m.youtube.com` and tracking parameters such as `t`, `si` and `list`. Direct media and manifest URLs (`.m3u8`, `.mpd`, `.mp4` and similar) match on host and path; the signed query string is ignored. Other page URLs keep their query, because the video id often lives there (`?id=`). A `fileName` sent with the request is matched too (trimmed, case-insensitive, with a repeated media extension such as `.mp4.mp4` removed). A video that is already pending, queued, downloading or completed returns **409**:
+
+```json
+{
+	"error": "Already in the list: \"Title\" (completed). Open /video/<id>. Remove that entry from the list before downloading it again.",
+	"duplicates": [
+		{
+			"id": "<id>",
+			"label": "Title",
+			"status": "completed",
+			"videoUrl": "https://…",
+			"message": "…"
+		}
+	]
+}
+```
+
+Adding a failed or cancelled video again restarts that entry (`retried`) instead of creating a second row. To download a completed video again, remove its list entry first. A batch that mixes new and duplicate URLs returns **202** and lists the skipped videos in `duplicates`.
+
 **Payload:**
 
 ```json
