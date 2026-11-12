@@ -24,6 +24,61 @@ const downloadQueue = new PQueue({ concurrency: 1 });
 
 const controllers = new Map<string, AbortController>();
 const scheduled = new Set<string>();
+/** Ids whose running work must wind down and must not be started again. */
+const halted = new Set<string>();
+/** Metadata fetches still in flight. Abort waits for these so they cannot queue a download afterwards. */
+const metadataJobs = new Map<string, Promise<unknown>>();
+/** startDownload promises. Abort waits until the process tree has exited. */
+const activeRuns = new Map<string, Promise<void>>();
+
+function trackMetadata(id: string, job: Promise<unknown>) {
+	const current = job.finally(() => {
+		if (metadataJobs.get(id) === current) metadataJobs.delete(id);
+	});
+	metadataJobs.set(id, current);
+	return current;
+}
+
+function trackRun(id: string, run: Promise<void>) {
+	const current = run.finally(() => {
+		if (activeRuns.get(id) === current) activeRuns.delete(id);
+	});
+	activeRuns.set(id, current);
+	return current;
+}
+
+export function releaseDownload(id: string) {
+	halted.delete(id);
+}
+
+/**
+ * Stop queued or running work for this id and wait until the yt-dlp process,
+ * if one was started, has exited. The list row is left for the caller.
+ */
+export async function abortDownload(id: string) {
+	halted.add(id);
+	const controller = controllers.get(id);
+	controllers.delete(id);
+	scheduled.delete(id);
+
+	if (controller && !controller.signal.aborted) {
+		await new Promise<void>((resolve) => {
+			setImmediate(() => {
+				try {
+					if (!controller.signal.aborted) controller.abort();
+				} catch (err) {
+					console.warn('AbortController.abort threw:', err);
+				}
+				resolve();
+			});
+		});
+	}
+
+	const pending = [metadataJobs.get(id), activeRuns.get(id)].filter(
+		(job): job is Promise<unknown> => Boolean(job)
+	);
+	await Promise.all(pending.map((job) => job.catch(() => undefined)));
+}
 
 export function setConcurrency(value: number) {
 	downloadQueue.concurrency = Number(value) || 1;
@@ -34,58 +89,42 @@ export function setPause(isPaused: boolean) {
 	else downloadQueue.start();
 }
 
-function waitIfPaused() {
+function waitIfPaused(signal?: AbortSignal) {
 	return new Promise<void>((resolve) => {
 		const check = () => {
-			if (!get(paused)) resolve();
-			else setTimeout(check, 500);
+			if (signal?.aborted || !get(paused)) resolve();
+			else setTimeout(check, 200);
 		};
 		check();
 	});
 }
 
 export async function removeFromQueue(id: string) {
-	const controller = controllers.get(id);
-	controllers.delete(id);
-	scheduled.delete(id);
-
-	if (controller) {
-		try {
-			setImmediate(() => {
-				try {
-					if (!controller.signal.aborted) controller.abort();
-				} catch (err) {
-					console.warn('AbortController.abort threw:', err);
-				}
-			});
-		} catch {
-			try {
-				if (!controller.signal.aborted) controller.abort();
-			} catch (err2) {
-				console.warn('Abort failed:', err2);
-			}
-		}
+	try {
+		await abortDownload(id);
+		await setStatus(id, 'cancelled', 'Cancelled by user');
+	} finally {
+		releaseDownload(id);
 	}
-
-	await setStatus(id, 'cancelled', 'Cancelled by user');
 }
 
 export async function processDownloads() {
 	const list = get(downloads).filter((d) => ['pending', 'queued'].includes(d.status));
 
 	for (const item of list) {
-		if (scheduled.has(item.id)) continue;
+		if (halted.has(item.id) || scheduled.has(item.id)) continue;
 		scheduled.add(item.id);
 
 		if (item.status === 'pending') {
-			metadataQueue.add(async () => {
+			const job = metadataQueue.add(async () => {
 				try {
-					await fetchMetadataAndQueue(item);
+					if (!halted.has(item.id)) await fetchMetadataAndQueue(item);
 				} finally {
 					scheduled.delete(item.id);
 					void processDownloads();
 				}
 			});
+			trackMetadata(item.id, job);
 		} else {
 			queueDownload(item);
 		}
@@ -93,11 +132,14 @@ export async function processDownloads() {
 }
 
 async function fetchMetadataAndQueue(item: Download) {
+	if (halted.has(item.id)) return;
 	await setStatus(item.id, 'metadata_fetching');
+	if (halted.has(item.id)) return;
 
 	try {
 		const { ytdlp } = await import('./ytdlp');
 		const info = (await ytdlp.getInfoAsync(item.videoUrl)) as YtInfo;
+		if (halted.has(item.id)) return;
 
 		if (isPlaylist(info) && Array.isArray(info.entries)) {
 			const entries = info.entries
@@ -164,32 +206,46 @@ async function fetchMetadataAndQueue(item: Download) {
 			else await setStatus(item.id, 'cancelled', 'Already in the list.');
 			return;
 		}
+		if (halted.has(item.id)) return;
 		await setStatus(item.id, 'queued');
 	} catch (err) {
+		if (halted.has(item.id)) return;
 		const fallbackName = item.fileName || sanitizeFilename(deriveNameFromUrl(item.videoUrl));
 		await updateDownload(item.id, { fileName: fallbackName });
+		if (halted.has(item.id)) return;
 		await setStatus(item.id, 'queued');
 		console.warn('Metadata extraction failed, queued with fallback metadata:', err);
 	}
 }
 
 function queueDownload(item: Download) {
+	if (halted.has(item.id)) {
+		scheduled.delete(item.id);
+		return;
+	}
+
 	const controller = new AbortController();
 	controllers.set(item.id, controller);
 
-	downloadQueue.add(async () => {
-		await waitIfPaused();
-		if (controller.signal.aborted) return;
-
-		const latest = get(downloads).find((download) => download.id === item.id);
-		if (!latest || latest.status !== 'queued') return;
-
+	void downloadQueue.add(async () => {
 		try {
-			const { startDownload } = await import('./download');
-			await startDownload(latest, controller.signal);
-		} catch (err) {
-			console.warn('startDownload failed for', item.id, err);
-			await setStatus(item.id, 'failed', (err as Error).message);
+			if (controller.signal.aborted || halted.has(item.id)) return;
+			await waitIfPaused(controller.signal);
+			if (controller.signal.aborted || halted.has(item.id)) return;
+
+			const latest = get(downloads).find((download) => download.id === item.id);
+			if (!latest || latest.status !== 'queued') return;
+
+			try {
+				const { startDownload } = await import('./download');
+				const run = startDownload(latest, controller.signal);
+				await trackRun(item.id, run);
+			} catch (err) {
+				console.warn('startDownload failed for', item.id, err);
+				if (!controller.signal.aborted && !halted.has(item.id)) {
+					await setStatus(item.id, 'failed', (err as Error).message);
+				}
+			}
 		} finally {
 			controllers.delete(item.id);
 			scheduled.delete(item.id);

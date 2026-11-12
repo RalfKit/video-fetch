@@ -3,8 +3,12 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { get } from 'svelte/store';
 import { deleteDownload, deleteDownloadsByStatus, setStatus } from '$lib/server/db';
-import { removeFromQueue } from '$lib/server/process';
-import { processDownloads } from '$lib/server/process';
+import {
+	abortDownload,
+	processDownloads,
+	releaseDownload,
+	removeFromQueue
+} from '$lib/server/process';
 import type { DownloadStatus } from '$lib/types/download';
 
 const CLEAR_SCOPES: Record<string, DownloadStatus[]> = {
@@ -66,7 +70,12 @@ export const actions = {
 			return fail(400, { error: 'Invalid ID' });
 		}
 
-		await deleteDownload(id);
+		try {
+			await abortDownload(id);
+			await deleteDownload(id);
+		} finally {
+			releaseDownload(id);
+		}
 
 		return { success: true };
 	},
@@ -98,6 +107,7 @@ export const actions = {
 			return fail(400, { error: 'Invalid ID' });
 		}
 
+		releaseDownload(id);
 		await setStatus(id, 'pending', null);
 
 		void processDownloads();
@@ -109,8 +119,15 @@ export const actions = {
 		const scope = formData.get('scope')?.toString() || 'completed';
 		const statuses = CLEAR_SCOPES[scope] ?? CLEAR_SCOPES.completed;
 
-		const removed = await deleteDownloadsByStatus(statuses);
-
-		return { success: true, removed };
+		const ids = get(downloads)
+			.filter((item) => statuses.includes(item.status))
+			.map((item) => item.id);
+		try {
+			await Promise.all(ids.map((id) => abortDownload(id)));
+			const removed = await deleteDownloadsByStatus(statuses);
+			return { success: true, removed };
+		} finally {
+			for (const id of ids) releaseDownload(id);
+		}
 	}
 } satisfies Actions;
