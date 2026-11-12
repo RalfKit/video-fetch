@@ -1,8 +1,8 @@
 import { fail, redirect, type ActionFailure } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { prepareDownloadItems, ValidationError } from '$lib/server/downloads-helper';
-import { addDownloads, type AddDownloadsOutcome } from '$lib/server/db';
-import { duplicateErrorBody, type ListedDuplicate } from '$lib/server/duplicate-guard';
+import { addDownloads } from '$lib/server/db';
+import type { ListedDuplicate } from '$lib/server/duplicate-guard';
 import { processDownloads } from '$lib/server/process';
 import { listDownloadFolders } from '$lib/server/folders';
 import { listProfiles } from '$lib/server/profiles';
@@ -46,8 +46,7 @@ export const actions: Actions = {
 			});
 
 			const outcome = await addDownloads(items);
-			const duplicate = duplicateForm(outcome);
-			if (duplicate) return fail(409, { error: duplicate.error, duplicates: duplicate.duplicates });
+			if (outcome.queued.length + outcome.retried.length > 0) void processDownloads();
 		} catch (err) {
 			if (err instanceof ValidationError)
 				return fail(err.status, { error: err.message, duplicates: [] });
@@ -96,8 +95,7 @@ export const actions: Actions = {
 
 			const items = await prepareDownloadItems(raw);
 			const outcome = await addDownloads(items);
-			const duplicate = duplicateForm(outcome);
-			if (duplicate) return fail(409, { error: duplicate.error, duplicates: duplicate.duplicates });
+			if (outcome.queued.length + outcome.retried.length > 0) void processDownloads();
 		} catch (err) {
 			if (err instanceof ValidationError)
 				return fail(err.status, { error: err.message, duplicates: [] });
@@ -107,15 +105,3 @@ export const actions: Actions = {
 		redirect(302, '/');
 	}
 };
-
-function duplicateForm(outcome: AddDownloadsOutcome) {
-	const added = outcome.queued.length + outcome.retried.length;
-	if (added > 0) void processDownloads();
-	if (outcome.duplicates.length === 0) return null;
-
-	const body = duplicateErrorBody(outcome.duplicates);
-	return {
-		error: added > 0 ? `Added ${added}.\n${body.error}` : body.error,
-		duplicates: body.duplicates
-	};
-}

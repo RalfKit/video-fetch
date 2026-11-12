@@ -100,17 +100,18 @@ beforeEach(() => {
 });
 
 describe('addDownloads duplicate guard', () => {
-	it('rejects an exact second URL and reports the existing row', async () => {
+	it('accepts an exact second URL and returns the existing row', async () => {
 		const url = 'https://example.com/video.mp4';
 		const first = await api.addDownloads([item(url, { title: 'Clip' })]);
-		const second = await api.addDownloads([item(url)]);
+		const second = await api.addDownloads([item(url, { fileName: 'Better name.mp4' })]);
 
 		expect(first.queued).toHaveLength(1);
 		expect(second.queued).toHaveLength(0);
-		expect(second.duplicates).toHaveLength(1);
-		expect(second.duplicates[0].id).toBe(first.queued[0].id);
-		expect(second.duplicates[0].message).toContain('Already in the list');
-		expect(second.duplicates[0].message).toContain(`/video/${first.queued[0].id}`);
+		expect(second.retried).toHaveLength(0);
+		expect(second.existing).toHaveLength(1);
+		expect(second.existing[0].id).toBe(first.queued[0].id);
+		expect(second.existing[0].status).toBe('pending');
+		expect(second.existing[0].fileName).toBe('Better name.mp4');
 		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
 	});
 
@@ -123,8 +124,9 @@ describe('addDownloads duplicate guard', () => {
 		]);
 
 		expect(first.queued).toHaveLength(1);
-		expect(second.duplicates).toHaveLength(1);
-		expect(second.duplicates[0].label).toBe('Same title');
+		expect(second.existing).toHaveLength(1);
+		expect(second.existing[0].title).toBe('Same title');
+		expect(second.queued).toHaveLength(0);
 		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
 	});
 
@@ -137,14 +139,14 @@ describe('addDownloads duplicate guard', () => {
 		]);
 
 		expect(outcome.queued).toHaveLength(4);
-		expect(outcome.duplicates).toHaveLength(0);
+		expect(outcome.existing).toHaveLength(0);
 	});
 
 	it('collapses a double submit in one request and across concurrent requests', async () => {
 		const url = 'https://example.com/race.mp4?utm_source=twice';
 		const batch = await api.addDownloads([item(url), item(`${url}&fbclid=1`)]);
 		expect(batch.queued).toHaveLength(1);
-		expect(batch.duplicates).toHaveLength(1);
+		expect(batch.existing).toHaveLength(1);
 
 		api.db.delete(downloadsSchema).run();
 		const [left, right] = await Promise.all([
@@ -153,9 +155,9 @@ describe('addDownloads duplicate guard', () => {
 		]);
 
 		const queued = left.queued.length + right.queued.length;
-		const duplicates = left.duplicates.length + right.duplicates.length;
+		const existing = left.existing.length + right.existing.length;
 		expect(queued).toBe(1);
-		expect(duplicates).toBe(1);
+		expect(existing).toBe(1);
 		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
 	});
 
@@ -191,9 +193,9 @@ describe('addDownloads duplicate guard', () => {
 		expect(again.retried[0].status).toBe('pending');
 	});
 
-	it('blocks a completed or in-progress video', async () => {
+	it('keeps a completed or in-progress video without starting another', async () => {
 		const url = 'https://vimeo.com/123456789';
-		const created = await api.addDownloads([item(url, { title: 'Kept' })]);
+		const created = await api.addDownloads([item(url, { title: 'Kept', fileName: 'kept.mp4' })]);
 		const id = created.queued[0].id;
 
 		await api.db
@@ -201,22 +203,28 @@ describe('addDownloads duplicate guard', () => {
 			.set({ status: 'completed', filePath: '/downloads/kept.mp4', finishedAt: new Date() })
 			.where(eq(downloadsSchema.id, id));
 
-		const completed = await api.addDownloads([item('https://player.vimeo.com/video/123456789')]);
+		const completed = await api.addDownloads([
+			item('https://player.vimeo.com/video/123456789', { fileName: 'replacement.mp4' })
+		]);
 		expect(completed.queued).toHaveLength(0);
 		expect(completed.retried).toHaveLength(0);
-		expect(completed.duplicates[0].message).toContain('Remove that entry');
-		expect(completed.duplicates[0].status).toBe('completed');
+		expect(completed.existing[0].id).toBe(id);
+		expect(completed.existing[0].status).toBe('completed');
+		expect(completed.existing[0].fileName).toBe('kept.mp4');
 
 		const stored = api.db.select().from(downloadsSchema).all();
 		expect(stored).toHaveLength(1);
 		expect(stored[0].status).toBe('completed');
+		expect(stored[0].filePath).toBe('/downloads/kept.mp4');
 
 		await api.db
 			.update(downloadsSchema)
 			.set({ status: 'downloading', finishedAt: null })
 			.where(eq(downloadsSchema.id, id));
-		const active = await api.addDownloads([item(url)]);
-		expect(active.duplicates[0].status).toBe('downloading');
+		const active = await api.addDownloads([item(url, { fileName: 'other.mp4' })]);
+		expect(active.existing[0].status).toBe('downloading');
+		expect(active.existing[0].fileName).toBe('kept.mp4');
+		expect(active.queued).toHaveLength(0);
 		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
 	});
 
@@ -290,13 +298,16 @@ describe('addDownloads duplicate guard', () => {
 		expect(first.queued[0].filenameKey).toBe(
 			'tomb.raider.king.s01e06.german.1080p.aac.webrip.x264-gsd'
 		);
-		expect(second.duplicates).toHaveLength(1);
-		expect(second.duplicates[0].message).toContain('Already in the list');
-		expect(second.duplicates[0].id).toBe(first.queued[0].id);
+		expect(second.existing).toHaveLength(1);
+		expect(second.existing[0].id).toBe(first.queued[0].id);
+		expect(second.existing[0].status).toBe('pending');
+		expect(second.existing[0].videoUrl).toBe(hlsB);
+		expect(second.existing[0].fileName).toBe(requestedName);
+		expect(second.queued).toHaveLength(0);
 		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
 	});
 
-	it('rejects a different URL that asks for the same filename', async () => {
+	it('keeps a different URL that asks for the same filename when that file is done', async () => {
 		const name = requestedName;
 		const first = await api.addDownloads([
 			item('https://cdn-a.example.test/one/video.mp4?sig=fake-a', { fileName: name, title: 'One' })
@@ -313,9 +324,10 @@ describe('addDownloads duplicate guard', () => {
 		]);
 
 		expect(second.queued).toHaveLength(0);
-		expect(second.duplicates).toHaveLength(1);
-		expect(second.duplicates[0].id).toBe(first.queued[0].id);
-		expect(second.duplicates[0].message).toContain('Already in the list');
+		expect(second.existing).toHaveLength(1);
+		expect(second.existing[0].id).toBe(first.queued[0].id);
+		expect(second.existing[0].status).toBe('completed');
+		expect(second.existing[0].videoUrl).toBe('https://cdn-a.example.test/one/video.mp4?sig=fake-a');
 		expect(api.db.select().from(downloadsSchema).all()).toHaveLength(1);
 	});
 

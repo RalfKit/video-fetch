@@ -173,24 +173,28 @@ eventSource.onmessage = (event) => {
 
 Adds one or multiple video download jobs. The endpoint validates basic payload shape, stores queue items, and returns before metadata extraction starts.
 
-The same video is not queued twice. YouTube links match across `youtu.be`, `youtube.com/watch`, Shorts, `m.youtube.com` and tracking parameters such as `t`, `si` and `list`. Direct media and manifest URLs (`.m3u8`, `.mpd`, `.mp4` and similar) match on host and path; the signed query string is ignored. Other page URLs keep their query, because the video id often lives there (`?id=`). A `fileName` sent with the request is matched too (trimmed, case-insensitive, with a repeated media extension such as `.mp4.mp4` removed). A video that is already pending, queued, downloading or completed returns **409**:
+The same video is not queued twice. YouTube links match across `youtu.be`, `youtube.com/watch`, Shorts, `m.youtube.com` and tracking parameters such as `t`, `si` and `list`. Direct media and manifest URLs (`.m3u8`, `.mpd`, `.mp4` and similar) match on host and path; the signed query string is ignored. Other page URLs keep their query, because the video id often lives there (`?id=`). A `fileName` sent with the request is matched too (trimmed, case-insensitive, with a repeated media extension such as `.mp4.mp4` removed). Submitting a video that is already pending, queued, downloading or completed is idempotent: the response is still **202**, nothing is inserted, and no second download starts. The existing row is returned in `existing`. While the job is still `pending` or `queued`, a later filename, folder, advanced options or a refreshed URL are written onto that row. A download that has already started, and a completed file, are left unchanged. Adding a failed or cancelled video again restarts that entry (`retried`) instead of creating a second row. To download a completed video again, remove its list entry first.
 
 ```json
 {
-	"error": "Already in the list: \"Title\" (completed). Open /video/<id>. Remove that entry from the list before downloading it again.",
-	"duplicates": [
+	"message": "Downloads added to queue",
+	"queued": 0,
+	"inserted": 0,
+	"retried": 0,
+	"existing": [
 		{
 			"id": "<id>",
-			"label": "Title",
-			"status": "completed",
 			"videoUrl": "https://…",
-			"message": "…"
+			"status": "completed",
+			"title": "Title",
+			"fileName": "Title.mp4",
+			"folder": null,
+			"profileId": "best",
+			"quality": "best"
 		}
 	]
 }
 ```
-
-Adding a failed or cancelled video again restarts that entry (`retried`) instead of creating a second row. To download a completed video again, remove its list entry first. A batch that mixes new and duplicate URLs returns **202** and lists the skipped videos in `duplicates`.
 
 **Payload:**
 
