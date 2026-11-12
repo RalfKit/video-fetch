@@ -14,17 +14,15 @@ import {
 	isUniqueConstraintError,
 	preferDuplicateRow,
 	RETRYABLE_DOWNLOAD_STATUSES,
-	type DuplicateCandidate,
-	type ListedDuplicate
+	type DuplicateCandidate
 } from './duplicate-guard';
 
-export type { ListedDuplicate };
 export { isUniqueConstraintError };
 
 export type AddDownloadsOutcome = {
 	queued: Download[];
 	retried: Download[];
-	duplicates: ListedDuplicate[];
+	existing: Download[];
 };
 
 type IdentityKeys = {
@@ -107,17 +105,67 @@ function retryPatch(
 	};
 }
 
-function toListedDuplicate(row: Download): ListedDuplicate {
-	return {
-		id: row.id,
-		label: row.title?.trim() || row.fileName?.trim() || row.videoUrl,
-		status: row.status,
-		videoUrl: row.videoUrl,
-		message: alreadyInListMessage(row)
-	};
+/** Options that can still change before yt-dlp is started. */
+const UPDATABLE_BEFORE_START = new Set(['pending', 'queued']);
+
+/**
+ * A second submit of a job that has not started yet.
+ * Only values the caller actually sent are applied: omitted filename, folder
+ * and advanced options stay as they are, so a defaulted profile is not wiped.
+ * The status is left untouched and no extra row is inserted.
+ * A running or finished download is not modified; the caller returns it as-is.
+ */
+function mutablePatch(item: DownloadAdd, existing: Download): Partial<DownloadAdd> | null {
+	if (!UPDATABLE_BEFORE_START.has(existing.status)) return null;
+
+	const patch: Partial<DownloadAdd> = {};
+	if (item.videoUrl && item.videoUrl !== existing.videoUrl) patch.videoUrl = item.videoUrl;
+	if (item.fileName && item.fileName !== existing.fileName) {
+		patch.fileName = item.fileName;
+		patch.filenameKey = item.filenameKey ?? null;
+	}
+	if (item.folder && item.folder !== existing.folder) patch.folder = item.folder;
+	if (item.advancedOptionsJson && item.advancedOptionsJson !== existing.advancedOptionsJson) {
+		patch.advancedOptionsJson = item.advancedOptionsJson;
+	}
+
+	return Object.keys(patch).length > 0 ? patch : null;
 }
 
 type ClaimExecutor = Pick<typeof db, 'select' | 'insert' | 'update'>;
+
+function keepExisting(tx: ClaimExecutor, item: DownloadAdd, existing: Download): Download {
+	const patch = mutablePatch(item, existing);
+	if (!patch) return existing;
+
+	const write = (values: Partial<DownloadAdd>) => {
+		const [updated] = tx
+			.update(downloadsSchema)
+			.set(values)
+			.where(eq(downloadsSchema.id, existing.id))
+			.returning()
+			.all();
+		return updated ?? existing;
+	};
+
+	try {
+		return write(patch);
+	} catch (err) {
+		if (!isUniqueConstraintError(err)) throw err;
+		// The new URL or filename belongs to another row. Keep the rest.
+		const rest = { ...patch };
+		delete rest.videoUrl;
+		delete rest.fileName;
+		delete rest.filenameKey;
+		if (Object.keys(rest).length === 0) return existing;
+		try {
+			return write(rest);
+		} catch (err2) {
+			if (!isUniqueConstraintError(err2)) throw err2;
+			return existing;
+		}
+	}
+}
 
 function readMatches(tx: ClaimExecutor, where: SQL | undefined): Download[] {
 	if (!where) return [];
@@ -127,13 +175,13 @@ function readMatches(tx: ClaimExecutor, where: SQL | undefined): Download[] {
 function claimOne(
 	tx: ClaimExecutor,
 	item: DownloadAdd
-): { queued?: Download; retried?: Download; duplicate?: ListedDuplicate } {
+): { queued?: Download; retried?: Download; existing?: Download } {
 	const where = identityWhere(item);
 
 	const apply = (matches: Download[]) => {
 		const decision = classifyDuplicateMatches(matches);
 		if (decision.kind === 'insert') return null;
-		if (decision.kind === 'reject') return { duplicate: toListedDuplicate(decision.existing) };
+		if (decision.kind === 'reject') return { existing: keepExisting(tx, item, decision.existing) };
 
 		try {
 			const [updated] = tx
@@ -176,9 +224,13 @@ function claimOne(
 function rememberOutcome(outcome: AddDownloadsOutcome) {
 	downloads.update((items) => {
 		const retriedIds = new Map(outcome.retried.map((row) => [row.id, row]));
+		const existingIds = new Map(outcome.existing.map((row) => [row.id, row]));
 		const next = items.map((item) => {
-			const updated = retriedIds.get(item.id);
-			return updated ? { ...item, ...updated, progress: null } : item;
+			const retried = retriedIds.get(item.id);
+			if (retried) return { ...item, ...retried, progress: null };
+			const existing = existingIds.get(item.id);
+			if (existing) return { ...item, ...existing, progress: item.progress };
+			return item;
 		});
 		return [...next, ...outcome.queued.map((row) => ({ ...row, progress: null }))];
 	});
@@ -190,22 +242,22 @@ export async function addDownload(download: DownloadAdd) {
 }
 
 export async function addDownloads(download: DownloadAdd[]): Promise<AddDownloadsOutcome> {
-	if (download.length === 0) return { queued: [], retried: [], duplicates: [] };
+	if (download.length === 0) return { queued: [], retried: [], existing: [] };
 
 	const prepared = download.map(withIdentity);
 	const outcome = db.transaction((tx) => {
 		const queued: Download[] = [];
 		const retried: Download[] = [];
-		const duplicates: ListedDuplicate[] = [];
+		const existing: Download[] = [];
 
 		for (const item of prepared) {
 			const result = claimOne(tx, item);
 			if (result.queued) queued.push(result.queued);
 			if (result.retried) retried.push(result.retried);
-			if (result.duplicate) duplicates.push(result.duplicate);
+			if (result.existing) existing.push(result.existing);
 		}
 
-		return { queued, retried, duplicates };
+		return { queued, retried, existing };
 	});
 
 	rememberOutcome(outcome);

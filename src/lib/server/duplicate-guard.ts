@@ -1,10 +1,10 @@
 /**
  * Duplicate policy for downloads.
  *
- * Pending, queued, fetching, downloading and completed rows block a new add.
- * Failed and cancelled rows are retried in place. Completed videos stay
- * blocked so a finished file is not downloaded again; removing that list entry
- * is the way to start a fresh copy.
+ * Pending, queued, fetching, downloading and completed rows already occupy the
+ * list. A repeat add keeps that row and does not start another download.
+ * Failed and cancelled rows are retried in place. Completed videos stay as
+ * they are; removing that list entry is the way to start a fresh copy.
  */
 
 export const BLOCKING_DOWNLOAD_STATUSES = new Set([
@@ -73,16 +73,6 @@ export function alreadyInListMessage(existing: LabeledDownload): string {
 			? ' Remove that entry from the list before downloading it again.'
 			: '';
 	return `Already in the list: "${label}" (${existing.status}). Open /video/${existing.id}.${again}`;
-}
-
-export function duplicateErrorBody(rows: ListedDuplicate[]): {
-	error: string;
-	duplicates: ListedDuplicate[];
-} {
-	return {
-		error: rows.map((duplicate) => duplicate.message).join('\n'),
-		duplicates: rows
-	};
 }
 
 /**

@@ -1,8 +1,21 @@
 import { prepareDownloadItems, ValidationError } from '$lib/server/downloads-helper';
 import { addDownloads } from '$lib/server/db';
-import { duplicateErrorBody } from '$lib/server/duplicate-guard';
+import type { Download } from '$lib/server/db/schema';
 import { processDownloads } from '$lib/server/process';
 import type { RequestHandler } from './$types';
+
+function existingEntry(row: Download) {
+	return {
+		id: row.id,
+		videoUrl: row.videoUrl,
+		status: row.status,
+		title: row.title,
+		fileName: row.fileName,
+		folder: row.folder,
+		profileId: row.profileId,
+		quality: row.quality
+	};
+}
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
@@ -13,19 +26,13 @@ export const POST: RequestHandler = async ({ request }) => {
 		const added = outcome.queued.length + outcome.retried.length;
 		if (added > 0) void processDownloads();
 
-		const duplicateBody = duplicateErrorBody(outcome.duplicates);
-		if (outcome.duplicates.length > 0 && added === 0) {
-			return new Response(JSON.stringify(duplicateBody), { status: 409 });
-		}
-
 		return new Response(
 			JSON.stringify({
-				message:
-					duplicateBody.duplicates.length > 0 ? duplicateBody.error : 'Downloads added to queue',
+				message: 'Downloads added to queue',
 				queued: added,
 				inserted: outcome.queued.length,
 				retried: outcome.retried.length,
-				duplicates: duplicateBody.duplicates
+				existing: outcome.existing.map(existingEntry)
 			}),
 			{ status: 202 }
 		);
