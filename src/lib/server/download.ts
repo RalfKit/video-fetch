@@ -1,4 +1,5 @@
-import { exec as execChild } from 'child_process';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { DOWNLOAD_FOLDER, TEMP_DOWNLOAD_FOLDER, ENABLE_THUMBNAILS } from './config';
@@ -18,15 +19,134 @@ import {
 
 type Stoppable = { kill: (signal: NodeJS.Signals) => boolean; pid?: number };
 
-function stopChild(download: Stoppable) {
-	try {
-		if (process.platform === 'win32' && download.pid !== undefined) {
-			execChild(`taskkill /PID ${download.pid} /T /F`, () => {});
-		} else {
-			download.kill('SIGKILL');
+const targetTail = new Map<string, Promise<void>>();
+
+function targetLockKeys(item: DownloadItem, outputBase: string): string[] {
+	const keys = [`file:${outputBase}`];
+	if (item.canonicalUrl) keys.push(`url:${item.canonicalUrl}`);
+	else if (item.videoUrl) keys.push(`url:${item.videoUrl}`);
+	if (item.mediaKey) keys.push(`media:${item.mediaKey}`);
+	return [...new Set(keys)].sort();
+}
+
+/** One running yt-dlp per output file and per video. The next job waits until the process tree is gone. */
+function withTargetLock(key: string, run: () => Promise<void>): Promise<void> {
+	const previous = targetTail.get(key) ?? Promise.resolve();
+	const runAfter = previous.catch(() => {}).then(run);
+	const settled = runAfter.then(
+		() => {},
+		() => {}
+	);
+	targetTail.set(key, settled);
+	void settled.finally(() => {
+		if (targetTail.get(key) === settled) targetTail.delete(key);
+	});
+	return runAfter;
+}
+
+function withTargetLocks(keys: string[], run: () => Promise<void>): Promise<void> {
+	const [key, ...rest] = keys;
+	if (!key) return run();
+	return withTargetLock(key, () => withTargetLocks(rest, run));
+}
+
+function directChildren(pid: number): number[] {
+	if (process.platform === 'linux') {
+		try {
+			const raw = readFileSync(`/proc/${pid}/task/${pid}/children`, 'utf8').trim();
+			if (!raw) return [];
+			return raw
+				.split(/\s+/)
+				.map(Number)
+				.filter((value) => Number.isInteger(value) && value > 0);
+		} catch {
+			return [];
 		}
+	}
+
+	try {
+		const raw = execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).trim();
+		if (!raw) return [];
+		return raw
+			.split(/\s+/)
+			.map(Number)
+			.filter((value) => Number.isInteger(value) && value > 0);
+	} catch {
+		return [];
+	}
+}
+
+function processAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Stop yt-dlp and the ffmpeg processes it spawned.
+ * `child.kill()` signals only the direct child, so a merge can keep writing
+ * the part files after the list entry is gone. Already downloaded parts are
+ * not deleted; a later add resumes from them.
+ */
+function killProcessTree(pid: number): number[] {
+	const stopped = new Set<number>();
+	const visit = (current: number) => {
+		if (stopped.has(current)) return;
+		try {
+			process.kill(current, 'SIGSTOP');
+		} catch {
+			return;
+		}
+		stopped.add(current);
+		for (const child of directChildren(current)) visit(child);
+	};
+
+	visit(pid);
+	for (const current of stopped) {
+		for (const child of directChildren(current)) visit(child);
+	}
+	for (const current of stopped) {
+		try {
+			process.kill(current, 'SIGKILL');
+		} catch {
+			/* already gone */
+		}
+	}
+	return [...stopped];
+}
+
+function stopDownloadProcess(download: Stoppable): number[] {
+	const pid = download.pid;
+	if (pid !== undefined && process.platform === 'win32') {
+		try {
+			execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+		} catch (err) {
+			console.warn('Failed to kill child process:', err);
+		}
+		return [pid];
+	}
+	if (pid !== undefined) return killProcessTree(pid);
+
+	try {
+		download.kill('SIGKILL');
 	} catch (err) {
 		console.warn('Failed to kill child process:', err);
+	}
+	return [];
+}
+
+async function waitUntilDead(pids: number[]) {
+	const pending = new Set(pids);
+	const deadline = Date.now() + 5000;
+	while (pending.size > 0 && Date.now() < deadline) {
+		for (const pid of [...pending]) {
+			if (!processAlive(pid)) pending.delete(pid);
+		}
+		if (pending.size === 0) return;
+		await new Promise((resolve) => setTimeout(resolve, 20));
 	}
 }
 
@@ -50,11 +170,24 @@ function resolveInactivityTimeoutMs(): number {
 }
 
 export async function startDownload(item: DownloadItem, signal?: AbortSignal): Promise<void> {
-	const stderrBuffer: string[] = [];
-	const targetFolder = await ensureExistingDownloadFolder(item.folder);
 	const outputBase = downloadOutputBase(
 		item.fileName || item.title || item.extractorVideoId || item.id
 	);
+	return withTargetLocks(targetLockKeys(item, outputBase), () =>
+		runDownload(item, signal, outputBase)
+	);
+}
+
+async function runDownload(
+	item: DownloadItem,
+	signal: AbortSignal | undefined,
+	outputBase: string
+): Promise<void> {
+	if (signal?.aborted) return;
+
+	const stderrBuffer: string[] = [];
+	const targetFolder = await ensureExistingDownloadFolder(item.folder);
+	if (signal?.aborted) return;
 	const tempOutput = path.join(TEMP_DOWNLOAD_FOLDER, `${outputBase}.%(ext)s`);
 
 	await setStatus(item.id, 'downloading');
@@ -72,19 +205,25 @@ export async function startDownload(item: DownloadItem, signal?: AbortSignal): P
 	let finished = false;
 	let killed = false;
 	let timedOut = false;
+	let doomed: number[] = [];
 	const timeoutMs = resolveInactivityTimeoutMs();
 
 	// Assigned inside the run() promise. Abort can fire before that promise
 	// observes the child "close" event (a killed shell may leave stdio open).
 	let fail = () => {};
 
+	const halt = () => {
+		killed = true;
+		const pids = stopDownloadProcess(download);
+		if (pids.length > 0) doomed = pids;
+	};
+
 	const onAbort = () => {
 		if (finished) return;
 
 		setImmediate(() => {
 			if (finished) return;
-			killed = true;
-			stopChild(download);
+			halt();
 			fail();
 		});
 	};
@@ -127,10 +266,9 @@ export async function startDownload(item: DownloadItem, signal?: AbortSignal): P
 		const onInactivity = () => {
 			if (finished) return;
 			timedOut = true;
-			killed = true;
 			// Flag the timeout before kill(). A synchronous error from kill must
 			// not be stored as a user cancellation.
-			stopChild(download);
+			halt();
 			fail();
 		};
 
@@ -160,6 +298,7 @@ export async function startDownload(item: DownloadItem, signal?: AbortSignal): P
 		fail = () => {
 			if (!markFinished()) return;
 			void (async () => {
+				if (timedOut || killed || signal?.aborted) await waitUntilDead(doomed);
 				if (timedOut) {
 					await setStatus(item.id, 'failed', inactivityFailureMessage(timeoutMs, processStarted));
 				} else if (signal?.aborted || killed) {
@@ -198,8 +337,8 @@ export async function startDownload(item: DownloadItem, signal?: AbortSignal): P
 		const running = download.run();
 		running.catch(fail);
 		if (signal?.aborted) {
-			killed = true;
-			stopChild(download);
+			halt();
+			fail();
 		}
 	});
 }

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DownloadItem } from '$lib/types/download';
 
@@ -137,6 +137,8 @@ describe('startDownload actually starts yt-dlp', () => {
 		delete process.env.VF_MARKER;
 		delete process.env.VF_TEMP;
 		delete process.env.VF_BASE;
+		delete process.env.VF_CHILD;
+		delete process.env.VF_FAST;
 		rmSync(dirs.root, { recursive: true, force: true });
 		mkdirSync(dirs.root, { recursive: true });
 	});
@@ -168,4 +170,89 @@ describe('startDownload actually starts yt-dlp', () => {
 		expect(setStatus).toHaveBeenCalledWith('dl-1', 'downloading');
 		expect(setStatus).toHaveBeenCalledWith('dl-1', 'failed', 'ERROR: boom');
 	});
+
+	it('kills yt-dlp and its children, keeps part files, and blocks a second writer', async () => {
+		const childFile = `${dirs.root}/child`;
+		const fastFile = `${dirs.root}/fast`;
+		writeFileSync(
+			dirs.bin,
+			`#!/bin/sh
+mkdir -p "$VF_TEMP"
+args="$*"
+case "$args" in
+  *hang=1*)
+    echo part > "$VF_TEMP/clip.mp4.part"
+    sleep 60 &
+    echo $! > "$VF_CHILD"
+    wait
+    ;;
+  *)
+    echo fast > "$VF_FAST"
+    printf fake > "$VF_TEMP/clip.mp4"
+    ;;
+esac
+`
+		);
+		chmodSync(dirs.bin, 0o755);
+		process.env.VF_TEMP = dirs.temp;
+		process.env.VF_CHILD = childFile;
+		process.env.VF_FAST = fastFile;
+
+		const hang = item();
+		hang.videoUrl = 'https://example.com/clip.mp4?hang=1';
+		const fast = item();
+		fast.id = 'dl-2';
+		fast.videoUrl = 'https://example.com/clip.mp4?fast=1';
+
+		const controller = new AbortController();
+		const first = startDownload(hang, controller.signal);
+		const childPid = await new Promise<number>((resolve, reject) => {
+			const timer = setTimeout(() => reject(new Error('child pid was not written')), 3000);
+			const check = () => {
+				if (!existsSync(childFile)) {
+					setTimeout(check, 20);
+					return;
+				}
+				clearTimeout(timer);
+				resolve(Number(readFileSync(childFile, 'utf8').trim()));
+			};
+			check();
+		});
+
+		let secondDone = false;
+		const second = startDownload(fast).then(() => {
+			secondDone = true;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		expect(secondDone).toBe(false);
+		expect(existsSync(fastFile)).toBe(false);
+		expect(alive(childPid)).toBe(true);
+
+		controller.abort();
+		let outcome: 'settled' | 'hung' = 'hung';
+		await Promise.race([
+			first.then(() => {
+				outcome = 'settled';
+			}),
+			new Promise((resolve) => setTimeout(resolve, 4000))
+		]);
+
+		expect(outcome).toBe('settled');
+		expect(alive(childPid)).toBe(false);
+		expect(existsSync(`${dirs.temp}/clip.mp4.part`)).toBe(true);
+		expect(setStatus).toHaveBeenCalledWith('dl-1', 'cancelled', 'Cancelled by user');
+
+		await second;
+		expect(existsSync(fastFile)).toBe(true);
+		expect(existsSync(`${dirs.temp}/clip.mp4.part`)).toBe(true);
+	});
 });
+
+function alive(pid: number) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
